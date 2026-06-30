@@ -47,8 +47,16 @@ Frontend:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
+```
+
+Shortcut:
+
+```bash
+make setup
+make backend-dev
+make frontend-dev
 ```
 
 ## Tests
@@ -59,6 +67,23 @@ python -m compileall tag_manager_cli
 cd frontend && npm run build
 ```
 
+Shortcut:
+
+```bash
+make test
+```
+
+## Security And Privacy Defaults
+
+- The dashboard binds to loopback by default.
+- Calls to `bluearch-aws-core` use the local service token.
+- AWS credentials stay in the user's local AWS config/credential chain.
+- No BlueArch-hosted telemetry, hosted sign-in, license gates, or private release services are included.
+- Tag inventories, lifecycle results, reports, logs, and screenshots may contain sensitive account data.
+- Report suspected vulnerabilities privately; see `SECURITY.md`.
+
 ## Contributing
 
 Keep AWS authentication user-owned through profiles, SSO, and assume-role. Do not add hosted analytics, product sign-in, commercial feature gates, private release URLs, internal account IDs, or private signing/obfuscation flows. Update IAM policy files when adding new AWS API calls.
+
+See `CONTRIBUTING.md` for the full contribution workflow.

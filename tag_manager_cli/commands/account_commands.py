@@ -22,7 +22,6 @@ from ..utils.error_handlers import handle_aws_errors
 from ..services.organizations_service import OrganizationsService
 from ..utils.setup_guardrails import setup_guardrails
 from ..services.dynamodb_state import DynamoDBStateService
-from ..licensing.gate import requires_tier
 from ..utils.parallel_role_manager import ParallelRoleManager, AccountInfo
 
 app = typer.Typer(
@@ -159,7 +158,6 @@ def accounts_callback(
 
 
 @app.command()
-@requires_tier("cross_account")
 def setup(
     validate_only: bool = typer.Option(False, "--validate-only", help="Only validate prerequisites without deploying"),
     accounts: Optional[str] = typer.Option(None, "--accounts", help="Comma-separated list of account IDs"),
@@ -208,7 +206,6 @@ def setup(
 
 
 @app.command()
-@requires_tier("cross_account")
 def list(
     show_access: bool = typer.Option(True, "--show-access/--no-access", help="Test and show role access status"),
     include_suspended: bool = typer.Option(False, "--include-suspended", help="Include suspended accounts"),
@@ -266,7 +263,6 @@ def list(
 
 
 @app.command()
-@requires_tier("cross_account")
 def test_access(
     account_ids: Optional[str] = typer.Option(None, "--accounts", help="Comma-separated account IDs to test"),
     role_name: str = typer.Option("BlueArchRole", "--role-name", help="Role name to test"),
@@ -399,7 +395,6 @@ def test_access(
 
 
 @app.command("remove-stacks")
-@requires_tier("cross_account")
 def remove_stacks(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompts"),
     keep_management_stack: bool = typer.Option(False, "--keep-management", help="Keep the management account stack")
@@ -442,7 +437,6 @@ def remove_stacks(
 
 
 @app.command("cleanup-orphans")
-@requires_tier("cross_account")
 def cleanup_orphans(
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompts"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without actually deleting")
@@ -475,7 +469,6 @@ def cleanup_orphans(
 
 
 @app.command()
-@requires_tier("cross_account")
 def diagnose(
     account_id: str = typer.Argument(..., help="Account ID to diagnose"),
     role_name: str = typer.Option("BlueArchRole", "--role-name", help="Role name to test"),
@@ -578,7 +571,6 @@ def diagnose(
 
 
 @app.command()
-@requires_tier("cross_account")
 def rollback(
     accounts: Optional[str] = typer.Option(None, "--accounts", help="Comma-separated list of account IDs"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation prompt"),
@@ -625,7 +617,6 @@ def rollback(
 
 
 @app.command()
-@requires_tier("cross_account")
 def enable(
     accounts: Optional[str] = typer.Option(None, "--accounts", help="Comma-separated account IDs to enable"),
     ou: Optional[str] = typer.Option(None, "--ou", help="Organizational Unit ID to enable all accounts within"),
@@ -722,7 +713,6 @@ def enable(
 
 
 @app.command()
-@requires_tier("cross_account")
 def disable(
     accounts: Optional[str] = typer.Option(None, "--accounts", help="Comma-separated account IDs to disable"),
     ou: Optional[str] = typer.Option(None, "--ou", help="Organizational Unit ID to disable all accounts within"),
@@ -820,7 +810,6 @@ def disable(
 
 
 @app.command()
-@requires_tier("cross_account")
 def show_enabled():
     """Show which accounts are enabled for scanning"""
 

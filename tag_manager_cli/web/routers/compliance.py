@@ -7,7 +7,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..dependencies import get_current_user, require_role, LocalUser
-from ...utils.event_hooks import track_event
 
 logger = logging.getLogger(__name__)
 from ..schemas.compliance import (
@@ -103,16 +102,6 @@ async def list_policies(
             )
         )
 
-    try:
-        track_event(
-            "web.compliance.list",
-            properties={
-                "user_sub": getattr(current_user, "sub", None),
-                "count": len(items),
-            },
-        )
-    except Exception:
-        pass
 
     return items
 

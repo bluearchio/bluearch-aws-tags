@@ -21,7 +21,6 @@ from ..core_storage import (
     list_storage_payloads,
     update_storage_payload,
 )
-from ...utils.event_hooks import track_event
 from ...utils.core_client import CoreRuntimeError
 from ..schemas.ai import (
     ChatRequest,
@@ -428,16 +427,6 @@ async def list_conversations(current_user: LocalUser = Depends(get_current_user)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
-    try:
-        track_event(
-            "web.ai.conversations",
-            properties={
-                "user_sub": getattr(current_user, "sub", None),
-                "count": len(result) if hasattr(result, "__len__") else 0,
-            },
-        )
-    except Exception:
-        pass
 
     return result
 

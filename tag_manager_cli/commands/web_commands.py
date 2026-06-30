@@ -19,7 +19,6 @@ from pathlib import Path
 import typer
 import typer.core
 from rich.console import Console
-from ..utils.event_hooks import emit_event
 
 console = Console()
 
@@ -260,13 +259,6 @@ def _stop_known_web_servers(target_port: int) -> None:
         print_safe(
             f"[yellow]Stopped existing BlueArch/Tag Manager web process(es): {', '.join(map(str, stopped))}[/yellow]"
         )
-        emit_event(
-            "web.server.port_reclaim",
-            surface="daemon",
-            command="web_start",
-            status="success",
-            properties={"target_port": target_port, "stopped_count": len(stopped)},
-        )
     _remove_stale_pid_files()
 
 
@@ -467,7 +459,6 @@ def start(
         else:
             print_safe(f"[red][ERROR] Web server already running (PID: {existing_pid})[/red]")
             print_safe("Use [cyan]tag-manager web stop[/cyan] to stop it first.")
-            emit_event("web.server.start", surface="daemon", command="web_start", status="already_running")
             raise typer.Exit(1)
 
     port = _resolve_start_port(host, port)
@@ -478,13 +469,6 @@ def start(
             print_safe("[yellow][WARN] --reload is ignored in daemon mode[/yellow]")
 
         _start_daemon(host, port, log_level)
-        emit_event(
-            "web.server.start",
-            surface="daemon",
-            command="web_start",
-            status="success",
-            properties={"host": host, "port": port, "daemon": True},
-        )
         if not no_browser:
             _open_browser(host, port)
         return
@@ -499,13 +483,6 @@ def start(
     print_safe("")
 
     _write_pid(os.getpid())
-    emit_event(
-        "web.server.start",
-        surface="web",
-        command="web_start",
-        status="success",
-        properties={"host": host, "port": port, "daemon": False},
-    )
 
     # Clean up PID file on exit
     def _cleanup_handler(signum, frame):
@@ -675,7 +652,6 @@ def stop():
     running, pid = _is_server_running()
     if not running:
         print_safe("Web server is not running.")
-        emit_event("web.server.stop", surface="daemon", command="web_stop", status="stopped")
         raise typer.Exit(0)
 
     print_safe(f"Stopping web server (PID: {pid})...")
@@ -702,7 +678,6 @@ def stop():
             pass
 
     _remove_pid()
-    emit_event("web.server.stop", surface="daemon", command="web_stop", status="success")
     print_safe(f"[green]Web server stopped (PID: {pid})[/green]")
 
 
@@ -715,13 +690,6 @@ def status():
         web status
     """
     running, pid = _is_server_running()
-    emit_event(
-        "web.server.status",
-        surface="daemon",
-        command="web_status",
-        status="success" if running else "stopped",
-        properties={"running": running},
-    )
     if not running:
         print_safe("Web server is [red]not running[/red].")
         raise typer.Exit(0)

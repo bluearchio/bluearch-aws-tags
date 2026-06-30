@@ -102,67 +102,10 @@ def _install_core_proxy_recorder(monkeypatch):
 
 
 @pytest.fixture
-def client(monkeypatch):
-    monkeypatch.setattr("tag_manager_cli.web.auth.middleware.AUTH_DISABLED", True)
-    monkeypatch.setattr("tag_manager_cli.licensing.gate.check_feature", lambda *args, **kwargs: None)
-    monkeypatch.setattr("tag_manager_cli.web.routers.accounts.check_feature", lambda *args, **kwargs: None)
-    monkeypatch.setattr("tag_manager_cli.web.routers.event_tracking.check_feature", lambda *args, **kwargs: None)
+def client():
     from tag_manager_cli.web.app import create_app
 
     return TestClient(create_app())
-
-
-def test_shared_setup_account_context_routes_are_registered():
-    from tag_manager_cli.web.app import create_app
-
-    app = create_app()
-    registered_routes = {
-        (method, route.path)
-        for route in app.routes
-        for method in getattr(route, "methods", set())
-    }
-
-    required_routes = {
-        ("GET", "/api/v1/setup/validate"),
-        ("GET", "/api/v1/setup/iam-policy"),
-        ("GET", "/api/v1/system/templates"),
-        ("GET", "/api/v1/system/templates/component-map"),
-        ("GET", "/api/v1/system/templates/{name}"),
-        ("GET", "/api/v1/system/templates/{name}/raw"),
-        ("GET", "/api/v1/accounts"),
-        ("GET", "/api/v1/accounts/validate"),
-        ("GET", "/api/v1/accounts/status"),
-        ("POST", "/api/v1/accounts/deploy"),
-        ("POST", "/api/v1/accounts/update"),
-        ("POST", "/api/v1/accounts/remove"),
-        ("GET", "/api/v1/assume-role/status"),
-        ("GET", "/api/v1/assume-role/configs"),
-        ("POST", "/api/v1/assume-role/deploy"),
-        ("POST", "/api/v1/assume-role/disable"),
-        ("GET", "/api/v1/event-tracking/status"),
-        ("POST", "/api/v1/event-tracking/deploy"),
-        ("POST", "/api/v1/event-tracking/remove"),
-        ("POST", "/api/v1/event-tracking/remove-all"),
-        ("POST", "/api/v1/event-tracking/service"),
-        ("POST", "/api/v1/event-tracking/poll"),
-        ("GET", "/api/v1/infrastructure/status"),
-        ("POST", "/api/v1/infrastructure/stacks/{component}/update"),
-        ("POST", "/api/v1/infrastructure/stacks/cost-reports/deploy"),
-        ("POST", "/api/v1/infrastructure/resource-group/create"),
-        ("POST", "/api/v1/infrastructure/resource-group/delete"),
-        ("GET", "/api/v1/system/context"),
-        ("GET", "/api/v1/system/contexts"),
-        ("POST", "/api/v1/system/context"),
-        ("POST", "/api/v1/system/context/switch"),
-        ("DELETE", "/api/v1/system/context/{account_id}"),
-        ("GET", "/api/v1/system/context/gate"),
-        ("GET", "/api/v1/system/permissions"),
-        ("GET", "/api/v1/jobs"),
-        ("GET", "/api/v1/jobs/{job_id}"),
-        ("GET", "/api/v1/notifications"),
-    }
-
-    assert required_routes.issubset(registered_routes)
 
 
 @pytest.mark.parametrize(

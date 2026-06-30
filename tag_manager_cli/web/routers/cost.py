@@ -7,8 +7,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from ..dependencies import get_current_user, require_role, LocalUser
-from ...licensing.gate import check_feature
-from ...utils.event_hooks import track_event
 from ...utils.core_client import request_core
 from ..schemas.cost import (
     CostByAccountResponse,
@@ -103,16 +101,6 @@ async def cost_summary(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Cost data error: {exc}")
 
-    try:
-        track_event(
-            "web.cost.dashboard",
-            properties={
-                "user_sub": getattr(current_user, "sub", None),
-                "count": len(data.get("by_service", [])) if isinstance(data.get("by_service"), list) else 0,
-            },
-        )
-    except Exception:
-        pass
 
     return CostSummaryResponse(**data)
 
@@ -312,7 +300,6 @@ async def forecast(body: CostForecastRequest, _user: LocalUser = Depends(get_cur
 @router.get("/cur/status", response_model=CURStatusResponse)
 async def cur_status(_user: LocalUser = Depends(get_current_user)):
     """Detect existing CUR configuration."""
-    check_feature("cost:cur_analytics")
 
     def _detect():
         from ...modules.finops.cur_setup import CURSetup
@@ -349,7 +336,6 @@ async def cur_status(_user: LocalUser = Depends(get_current_user)):
 @router.post("/cur/deploy", response_model=CURDeployResponse)
 async def cur_deploy(body: CURDeployRequest, _user: LocalUser = Depends(require_role(["admin", "operator"]))):
     """Deploy CUR infrastructure through bluearch-core."""
-    check_feature("cost:cur_analytics")
 
     def _deploy():
         from ...modules.finops.cur_setup import CURSetup
@@ -396,7 +382,6 @@ async def cur_deploy(body: CURDeployRequest, _user: LocalUser = Depends(require_
 @router.post("/cur/validate", response_model=CURStatusResponse)
 async def cur_validate(body: CURValidateRequest, _user: LocalUser = Depends(require_role(["admin", "operator"]))):
     """Validate a manual CUR configuration."""
-    check_feature("cost:cur_analytics")
 
     def _validate():
         from ...modules.finops.cur_setup import CURConfiguration, CURSetup

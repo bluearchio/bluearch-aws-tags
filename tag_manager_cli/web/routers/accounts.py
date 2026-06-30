@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...licensing.gate import check_feature
-from ...utils.event_hooks import track_event
 from ...utils.core_client import request_core
 from ..dependencies import get_current_user, require_role, LocalUser
 from ..schemas.accounts import AccountValidationResponse, AccountsListResponse, DeployRequest, StackSetStatusResponse
@@ -38,7 +36,6 @@ def _submitted(row: dict, job_type: str, message: str) -> JobSubmittedResponse:
 @router.get("/validate", response_model=AccountValidationResponse)
 async def validate_account(_user: LocalUser = Depends(get_current_user)):
     """Validate whether the active AWS identity can deploy multi-account infrastructure."""
-    check_feature("cross_account")
     try:
         return _core_get("/api/v1/accounts/validate", timeout=15.0)
     except Exception as exc:
@@ -48,7 +45,6 @@ async def validate_account(_user: LocalUser = Depends(get_current_user)):
 @router.get("/status", response_model=StackSetStatusResponse)
 async def stackset_status(_user: LocalUser = Depends(get_current_user)):
     """Get StackSet status from bluearch-core."""
-    check_feature("cross_account")
     try:
         return _core_get("/api/v1/accounts/status", timeout=15.0)
     except Exception as exc:
@@ -62,10 +58,6 @@ async def list_accounts(current_user: LocalUser = Depends(get_current_user)):
         rows = _core_get("/api/v1/accounts")
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"bluearch-core accounts unavailable: {exc}") from exc
-    try:
-        track_event("web.accounts.list", properties={"user_sub": getattr(current_user, "sub", None), "count": len(rows), "source": "bluearch-core"})
-    except Exception:
-        pass
     return {"accounts": rows, "total": len(rows)}
 
 
@@ -75,7 +67,6 @@ async def deploy_stackset(
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
     """Deploy cross-account infrastructure through bluearch-core."""
-    check_feature("cross_account")
     try:
         return _submitted(_core_post("/api/v1/accounts/deploy", _payload(body), timeout=20.0), "multi_account_deploy", "Multi-account deployment started")
     except Exception as exc:
@@ -85,7 +76,6 @@ async def deploy_stackset(
 @router.post("/update", response_model=JobSubmittedResponse)
 async def update_stackset(_user: LocalUser = Depends(require_role(["admin", "operator"]))):
     """Update cross-account infrastructure through bluearch-core."""
-    check_feature("cross_account")
     try:
         return _submitted(_core_post("/api/v1/accounts/update", timeout=20.0), "multi_account_update", "Multi-account update started")
     except Exception as exc:
@@ -95,7 +85,6 @@ async def update_stackset(_user: LocalUser = Depends(require_role(["admin", "ope
 @router.post("/remove", response_model=JobSubmittedResponse)
 async def remove_stackset(_user: LocalUser = Depends(require_role(["admin", "operator"]))):
     """Remove cross-account infrastructure through bluearch-core."""
-    check_feature("cross_account")
     try:
         return _submitted(_core_post("/api/v1/accounts/remove", timeout=20.0), "multi_account_remove", "Multi-account removal started")
     except Exception as exc:

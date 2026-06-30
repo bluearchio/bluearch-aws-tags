@@ -9,7 +9,6 @@ from rich.panel import Panel
 from rich.prompt import Prompt, Confirm
 from datetime import datetime, timezone, timedelta
 
-from ..licensing.gate import requires_tier
 
 console = Console()
 
@@ -1301,7 +1300,6 @@ def set_ttl_command(
 
 
 @lifecycle_app.command("delete")
-@requires_tier("lifecycle:auto_delete")
 def delete_command(
     services: Optional[str] = typer.Option(None, "--services", "-s", help="Filter by services"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Preview without deleting"),
@@ -1426,7 +1424,6 @@ RESOURCE_TYPES = [
 
 
 @policies_app.command("create")
-@requires_tier("lifecycle:policies")
 def policies_create_command(
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Policy name"),
     ttl_days: Optional[int] = typer.Option(None, "--ttl-days", "-d", help="TTL in days"),
@@ -1614,7 +1611,6 @@ def policies_create_command(
 
 
 @policies_app.command("edit")
-@requires_tier("lifecycle:policies")
 def policies_edit_command(
     name: str = typer.Argument(..., help="Policy name to edit"),
 ):
@@ -1690,7 +1686,6 @@ def policies_edit_command(
 
 
 @policies_app.command("delete")
-@requires_tier("lifecycle:policies")
 def policies_delete_command(
     name: Optional[str] = typer.Option(None, "--name", "-n", help="Policy name to delete"),
     force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),

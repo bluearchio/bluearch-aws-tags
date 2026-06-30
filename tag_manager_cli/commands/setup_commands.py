@@ -23,7 +23,6 @@ from ..utils.aws_auth import aws_auth
 from ..utils.command_suggestions import show_suggestions
 from ..utils.env_config import settings
 from ..utils.core_client import CoreRuntimeError, request_core
-from ..licensing.gate import requires_tier
 
 console = Console()
 setup_app = typer.Typer(
@@ -1268,7 +1267,6 @@ def _remove_multi_account(force: bool = False) -> None:
 
 
 @setup_app.command("multi-account")
-@requires_tier("cross_account")
 def multi_account_setup(
     validate_only: bool = typer.Option(False, "--validate-only", help="Only validate prerequisites without deploying"),
     accounts: Optional[str] = typer.Option(None, "--accounts", help="Comma-separated list of account IDs"),
@@ -1392,7 +1390,6 @@ def multi_account_setup(
 
 
 @setup_app.command("assume-role")
-@requires_tier("cross_account")
 def setup_assume_role(
     role_name: Optional[str] = typer.Option("BlueArchCLIRole", "--role-name", "-r", help="IAM role name to assume"),
     external_id: Optional[str] = typer.Option(None, "--external-id", "-e", help="External ID for role assumption (auto-retrieved from Secrets Manager if not specified)"),
@@ -1863,7 +1860,6 @@ def _delete_assume_role_stack(stack_name: str, force: bool = False):
 
 
 @setup_app.command("infrastructure")
-@requires_tier("cross_account")
 def infrastructure_status_cmd(
     create_resource_group: bool = typer.Option(False, "--create-rg", help="Create the BlueArch-TagManager Resource Group"),
     delete_resource_group: bool = typer.Option(False, "--delete-rg", help="Delete the BlueArch-TagManager Resource Group"),
@@ -2215,7 +2211,6 @@ def remove_context_cmd():
 
 
 @setup_app.command("event-tracking")
-@requires_tier("event_tracking")
 def event_tracking_cmd(
     remove: bool = typer.Option(False, "--remove", help="Deactivate event tracking (clean DB records)"),
     status: bool = typer.Option(False, "--status", help="Show event tracking status only"),
@@ -2324,10 +2319,3 @@ def upgrade_cmd():
     """Show open-source feature availability."""
     console = Console()
     console.print("\n  [green][OK] All open-source features are enabled locally.[/green]\n")
-
-
-@setup_app.command("license")
-def license_cmd():
-    """Show open-source activation status."""
-    console = Console()
-    console.print("\n  [green][OK] Commercial activation is not required for this build.[/green]\n")

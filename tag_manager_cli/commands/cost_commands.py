@@ -13,7 +13,6 @@ from rich.prompt import Confirm, Prompt
 
 from ..utils.display_utils import print_safe, print_success, print_warning, print_error
 from ..utils.error_handlers import handle_aws_errors, require_aws_credentials
-from ..licensing.gate import requires_tier
 
 cost_app = typer.Typer(
     help="FinOps cost analysis and chargeback reporting (CUR-powered)",
@@ -109,7 +108,6 @@ def _parse_date(date_str: Optional[str], default_days_ago: int = 30) -> date:
 # =============================================================================
 
 @cost_app.command("setup")
-@requires_tier("cost:cur_analytics")
 @require_aws_credentials
 def cost_setup(
     action: str = typer.Argument(
@@ -572,7 +570,6 @@ def cost_gaps(
 # =============================================================================
 
 @cost_app.command("anomalies")
-@requires_tier("cost:cur_analytics")
 @require_aws_credentials
 def cost_anomalies(
     action: str = typer.Argument(
@@ -780,7 +777,6 @@ def cost_trends(
 # =============================================================================
 
 @cost_app.command("services")
-@requires_tier("cost:cur_analytics")
 @require_aws_credentials
 def cost_services(
     start_date: Optional[str] = typer.Option(
@@ -879,7 +875,6 @@ def cost_services(
 
 
 @cost_app.command("accounts")
-@requires_tier("cost:cur_analytics")
 @require_aws_credentials
 def cost_accounts(
     start_date: Optional[str] = typer.Option(
@@ -991,7 +986,6 @@ def cost_accounts(
 
 
 @cost_app.command("resources")
-@requires_tier("cost:cur_analytics")
 @require_aws_credentials
 def cost_resources(
     start_date: Optional[str] = typer.Option(
@@ -1084,7 +1078,6 @@ def cost_resources(
 
 
 @cost_app.command("daily")
-@requires_tier("cost:cur_analytics")
 @require_aws_credentials
 def cost_daily(
     start_date: Optional[str] = typer.Option(

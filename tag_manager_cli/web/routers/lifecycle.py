@@ -43,8 +43,6 @@ from ..schemas.lifecycle import (
     TTLPreviewItem,
     TTLPreviewResponse,
 )
-from ...licensing.gate import check_feature
-from ...utils.event_hooks import track_event
 from ...utils.core_client import CoreRuntimeError
 
 logger = logging.getLogger(__name__)
@@ -97,13 +95,6 @@ async def lifecycle_dashboard(current_user: LocalUser = Depends(get_current_user
         expiring_30d = sum(1 for r in resources if _is_expiring(r, now, 30))
         expired = sum(1 for r in resources if _is_expired(r, now))
         tagged = sum(1 for r in resources if r.get("current_tags"))
-        try:
-            track_event(
-                "web.lifecycle.dashboard",
-                properties={"user_sub": getattr(current_user, "sub", None), "count": len(resources)},
-            )
-        except Exception:
-            pass
         return LifecycleDashboardResponse(
             total_resources=len(resources),
             active=active,
@@ -197,7 +188,6 @@ async def create_policy(
     body: PolicyCreateRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     if any(policy.get("name") == body.name for policy in _all_core_policies()):
         raise HTTPException(status_code=409, detail=f"Policy with name '{body.name}' already exists")
     now = datetime.now(timezone.utc)
@@ -220,7 +210,6 @@ async def update_policy(
     body: PolicyUpdateRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     policy = _get_policy_or_404(policy_id)
     updates = body.model_dump(exclude_unset=True) if hasattr(body, "model_dump") else body.dict(exclude_unset=True)
     field_map = {"warning_days": "warning_days_before"}
@@ -242,7 +231,6 @@ async def delete_policy(
     policy_id: str,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     _get_policy_or_404(policy_id)
     _clear_policy_links(policy_id)
     delete_storage_payload("tag-manager", "resource-lifecycle-policies", policy_id)
@@ -297,7 +285,6 @@ async def set_ttl(
     body: SetTTLRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     resources = _select_core_resources(body.resource_ids, body.resource_arns, body.services)
     if not resources:
         return MutationResultResponse(affected_count=0, details="No matching resources")
@@ -311,7 +298,6 @@ async def extend_ttl(
     body: ExtendTTLRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     resources = [r for r in _select_core_resources(body.resource_ids, body.resource_arns) if r.get("expires_at")]
     if not resources:
         return MutationResultResponse(affected_count=0, details="No matching resources with TTL")
@@ -325,7 +311,6 @@ async def toggle_protect(
     body: ProtectRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     resources = _select_core_resources(body.resource_ids, body.resource_arns)
     for resource in resources:
         resource["protected"] = body.protect
@@ -382,7 +367,6 @@ async def review_mark_delete(
     body: ReviewActionRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     resources = _select_core_resources(body.resource_ids, None)
     _review_update(resources, "terminate", "DELETION_SCHEDULED", body.reason, new_state="marked_for_deletion")
     return MutationResultResponse(affected_count=len(resources), details=f"Marked {len(resources)} resource(s) for deletion")
@@ -393,7 +377,6 @@ async def review_execute_delete(
     body: ExecuteDeleteRequest,
     _user: LocalUser = Depends(require_role(["admin", "operator"])),
 ):
-    check_feature("web:write_operations")
     if body.confirmation != "DELETE":
         raise HTTPException(status_code=400, detail="Confirmation must be exactly 'DELETE'")
     resources = [

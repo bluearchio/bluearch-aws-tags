@@ -22,8 +22,6 @@ from ..schemas.graph import (
     GraphResponse,
     GraphStatsResponse,
 )
-from ...licensing.gate import check_feature
-from ...utils.event_hooks import track_event
 from ...utils.core_client import request_core
 
 router = APIRouter(prefix="/api/v1/graph", tags=["graph"])
@@ -183,7 +181,6 @@ async def get_graph(
     current_user: LocalUser = Depends(get_current_user),
 ):
     """Get graph data for the resource map."""
-    check_feature("resource_map")
     try:
         resources = _core_all_resources()
         relationships = _core_relationships()
@@ -236,10 +233,6 @@ async def get_graph(
         for edge in selected_edges
     ]
     result = GraphResponse(nodes=nodes, edges=edges, categories=CATEGORY_LIST, total_relationships=len(relationships), truncated=truncated)
-    try:
-        track_event("web.graph.data", properties={"user_sub": getattr(current_user, "sub", None), "count": len(nodes), "source": "bluearch-core"})
-    except Exception:
-        pass
     return result
 
 
@@ -249,7 +242,6 @@ async def get_blast_radius(
     _user: LocalUser = Depends(get_current_user),
 ):
     """Compute blast-radius analysis for a resource."""
-    check_feature("resource_map")
     try:
         resources = _core_all_resources()
         relationships = _core_relationships()
@@ -332,7 +324,6 @@ async def get_graph_stats(
     _user: LocalUser = Depends(get_current_user),
 ):
     """Get aggregate relationship statistics."""
-    check_feature("resource_map")
     try:
         relationships = _filtered_relationships(_core_relationships(), region=region, account_id=account_id)
     except Exception as exc:
@@ -349,7 +340,6 @@ async def get_graph_stats(
 @router.get("/filters", response_model=GraphFiltersResponse)
 async def get_graph_filters(_user: LocalUser = Depends(get_current_user)):
     """Get available filter values for the graph."""
-    check_feature("resource_map")
     try:
         resources = _core_all_resources()
         relationships = _core_relationships()

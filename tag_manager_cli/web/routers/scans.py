@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from ...utils.event_hooks import track_event
 from ...utils.core_client import request_core
 from ..dependencies import get_current_user, LocalUser
 
@@ -18,13 +17,6 @@ async def list_scan_jobs(current_user: LocalUser = Depends(get_current_user)):
         result = request_core("GET", "/api/v1/scans/jobs", timeout=5.0)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"bluearch-core scan jobs unavailable: {exc}") from exc
-    try:
-        track_event(
-            "web.scans.list",
-            properties={"user_sub": getattr(current_user, "sub", None), "count": len(result)},
-        )
-    except Exception:
-        pass
     return result
 
 

@@ -146,9 +146,14 @@ lambda-package.zip
 
 # Frontend build artifacts
 frontend/node_modules/
+frontend/dist/
+frontend/.vite/
 frontend/tsconfig.tsbuildinfo
 tag_manager_cli/web/static/
+frontend/test-results/
 
 # Build artifacts
+*.egg-info/
+.pytest_cache/
 .tag_manager_submodules.json
 .aws-sam/

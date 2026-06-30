@@ -6,6 +6,7 @@ Top-level commands for discovering AWS resources across services and regions.
 import typer
 from typing import Optional
 from rich.console import Console
+from ..modules.collection.collectors import COLLECTORS
 from ..utils.error_handlers import require_aws_credentials, handle_all_errors
 from ..utils.aws_auth import aws_auth
 from ..utils.console_safe import safe_print
@@ -256,9 +257,8 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
         if accounts:
             account_list = [a.strip() for a in accounts.split(",")]
 
-        # Parse services and filter by license tier
-        from ..licensing.gate import get_available_collectors
-        allowed = get_available_collectors()
+        # Parse services and filter by implemented collectors.
+        allowed = dict(COLLECTORS)
 
         if services == 'all':
             service_list = ['ec2', 's3', 'lambda', 'rds', 'dynamodb', 'ecs', 'elb']
@@ -294,10 +294,9 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
 
     # Original single-account discovery
     from ..modules.discovery import discover_all_resources_v2
-    from ..licensing.gate import get_available_collectors
-    allowed = get_available_collectors()
+    allowed = dict(COLLECTORS)
 
-    # Parse services and filter by license tier
+    # Parse services and filter by implemented collectors.
     if services == "all":
         service_list = ['ec2', 's3', 'lambda', 'rds', 'dynamodb', 'ecs', 'elb']
     else:

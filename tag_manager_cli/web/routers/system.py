@@ -6,7 +6,6 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..dependencies import get_current_user, LocalUser
-from ...utils.event_hooks import track_event
 from ..schemas.common import (
     HealthResponse,
     SetupCheckItem,
@@ -95,18 +94,6 @@ async def validate_setup(current_user: LocalUser = Depends(get_current_user)):
         result = _normalize_core_validation(request_core("GET", "/api/v1/setup/validate", timeout=15.0))
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"bluearch-core setup validation unavailable: {exc}") from exc
-    try:
-        track_event(
-            "web.setup.validate",
-            properties={
-                "user_sub": getattr(current_user, "sub", None),
-                "count": len(result.checks),
-                "overall": result.overall,
-                "source": "bluearch-core",
-            },
-        )
-    except Exception:
-        pass
     return result
 
 

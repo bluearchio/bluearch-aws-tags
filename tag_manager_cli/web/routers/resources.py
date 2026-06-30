@@ -15,7 +15,6 @@ from ..core_storage import get_storage_payload, update_storage_payload
 from ..dependencies import get_current_user, require_role, LocalUser
 from ..schemas.common import PaginatedResponse
 from ..schemas.resources import ResourceResponse, ResourceStatsResponse
-from ...utils.event_hooks import track_event
 from ...utils.core_client import request_core
 
 logger = logging.getLogger(__name__)
@@ -57,23 +56,6 @@ async def list_resources(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"bluearch-core resources unavailable: {exc}") from exc
 
-    try:
-        track_event(
-            "web.resources.list",
-            properties={
-                "user_sub": getattr(current_user, "sub", None),
-                "count": len(result.get("items", [])) if isinstance(result, dict) else 0,
-                "total": result.get("total") if isinstance(result, dict) else None,
-                "limit": limit,
-                "offset": offset,
-                "service": service,
-                "region": region,
-                "account_id": account_id,
-                "source": "bluearch-core",
-            },
-        )
-    except Exception:
-        pass
     return result
 
 
