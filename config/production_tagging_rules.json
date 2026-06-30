@@ -1,0 +1,166 @@
+[
+  {
+    "name": "governance_core_tags",
+    "description": "Enforce core governance tags for all resources",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Volume",
+      "AWS::DynamoDB::Table",
+      "AWS::ECS::Service",
+      "AWS::EKS::Cluster"
+    ],
+    "conditions": [],
+    "tag_templates": [
+      {
+        "key": "Environment",
+        "value": "Production"
+      },
+      {
+        "key": "Owner",
+        "value": "team-platform"
+      },
+      {
+        "key": "Project",
+        "value": "core-infrastructure"
+      },
+      {
+        "key": "CostCenter",
+        "value": "engineering"
+      },
+      {
+        "key": "ManagedBy",
+        "value": "tag-manager"
+      }
+    ],
+    "priority": 300,
+    "enabled": true,
+    "notes": "These are default values - customize based on your organization structure"
+  },
+  {
+    "name": "cost_tracking",
+    "description": "Add cost tracking and budgeting tags",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::RDS::DBInstance",
+      "AWS::Redshift::Cluster",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume",
+      "AWS::S3::Bucket",
+      "AWS::ElasticLoadBalancing::LoadBalancer"
+    ],
+    "conditions": [],
+    "tag_templates": [
+      {
+        "key": "Team",
+        "value": "platform"
+      },
+      {
+        "key": "Department",
+        "value": "engineering"
+      },
+      {
+        "key": "BudgetCode",
+        "value": "ENG-2025"
+      },
+      {
+        "key": "CostCategory",
+        "value": "infrastructure"
+      },
+      {
+        "key": "BillingContact",
+        "value": "finance@company.com"
+      }
+    ],
+    "priority": 200,
+    "enabled": true,
+    "notes": "Essential for cost allocation and chargeback"
+  },
+  {
+    "name": "lifecycle_management",
+    "description": "Set lifecycle and expiry tags for resource management",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Snapshot"
+    ],
+    "conditions": [],
+    "tag_templates": [
+      {
+        "key": "CreatedDate",
+        "value": "2025-08-23"
+      },
+      {
+        "key": "LastModified",
+        "value": "2025-08-23"
+      },
+      {
+        "key": "ExpiryDate",
+        "value": "2026-08-23"
+      },
+      {
+        "key": "TTLDays",
+        "value": "365"
+      },
+      {
+        "key": "AutoDelete",
+        "value": "false"
+      },
+      {
+        "key": "BackupPolicy",
+        "value": "weekly"
+      }
+    ],
+    "priority": 150,
+    "enabled": true,
+    "notes": "Adjust TTL and backup policies based on environment"
+  },
+  {
+    "name": "compliance_security",
+    "description": "Apply compliance and security classification tags",
+    "resource_types": [
+      "AWS::S3::Bucket",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Instance",
+      "AWS::Lambda::Function",
+      "AWS::DynamoDB::Table",
+      "AWS::Secrets::Secret",
+      "AWS::KMS::Key"
+    ],
+    "conditions": [],
+    "tag_templates": [
+      {
+        "key": "DataClassification",
+        "value": "internal"
+      },
+      {
+        "key": "Encrypted",
+        "value": "true"
+      },
+      {
+        "key": "BackupRequired",
+        "value": "true"
+      },
+      {
+        "key": "ComplianceScope",
+        "value": "standard"
+      },
+      {
+        "key": "SecurityReview",
+        "value": "approved"
+      },
+      {
+        "key": "AuditFrequency",
+        "value": "quarterly"
+      }
+    ],
+    "priority": 250,
+    "enabled": true,
+    "notes": "Critical for compliance and security audits"
+  }
+]

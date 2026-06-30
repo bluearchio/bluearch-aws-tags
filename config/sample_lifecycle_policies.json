@@ -1,0 +1,254 @@
+[
+  {
+    "name": "Development Resources Cleanup",
+    "description": "Automatically clean up development and testing resources after 7 days",
+    "resource_types": [
+      "AWS::EC2::Instance", 
+      "AWS::EC2::Volume", 
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "tags.Environment",
+        "operator": "in",
+        "value": ["development", "dev", "testing", "test", "staging"]
+      }
+    ],
+    "ttl_days": 7,
+    "warning_days_before": 2,
+    "actions": [
+      {
+        "type": "warn",
+        "days_before": 2
+      },
+      {
+        "type": "delete",
+        "days_after_expiration": 1
+      }
+    ],
+    "priority": 100,
+    "enabled": true,
+    "auto_apply": true,
+    "require_confirmation": true,
+    "max_deletions_per_day": 20,
+    "exclude_patterns": {
+      "resource_names": [
+        ".*-prod-.*",
+        ".*production.*",
+        ".*-prd-.*"
+      ],
+      "tags": [
+        {
+          "key": "DoNotDelete",
+          "value": "true"
+        },
+        {
+          "key": "Environment",
+          "value": "production"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Temporary Resources Auto-Cleanup",
+    "description": "Aggressively clean up resources marked as temporary after 24 hours",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::EC2::Volume", 
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance"
+    ],
+    "conditions": [
+      {
+        "field": "tags.Purpose",
+        "operator": "in",
+        "value": ["temp", "temporary", "test", "demo"]
+      }
+    ],
+    "ttl_days": 1,
+    "warning_days_before": 0.5,
+    "actions": [
+      {
+        "type": "warn",
+        "days_before": 0.5
+      },
+      {
+        "type": "delete",
+        "days_after_expiration": 0.5
+      }
+    ],
+    "priority": 50,
+    "enabled": true,
+    "auto_apply": true,
+    "require_confirmation": false,
+    "max_deletions_per_day": 100,
+    "exclude_patterns": {
+      "tags": [
+        {
+          "key": "DoNotDelete",
+          "value": "true"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Untagged Resources Grace Period",
+    "description": "Give untagged resources 30 days to be properly tagged before cleanup consideration",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::EC2::Volume",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "tags.Environment",
+        "operator": "not_exists"
+      },
+      {
+        "field": "tags.Owner",
+        "operator": "not_exists"
+      },
+      {
+        "field": "tags.CostCenter",
+        "operator": "not_exists"
+      }
+    ],
+    "ttl_days": 30,
+    "warning_days_before": 7,
+    "actions": [
+      {
+        "type": "warn",
+        "days_before": 7
+      },
+      {
+        "type": "warn",
+        "days_before": 1
+      }
+    ],
+    "priority": 200,
+    "enabled": true,
+    "auto_apply": false,
+    "require_confirmation": true,
+    "max_deletions_per_day": 10,
+    "exclude_patterns": {
+      "resource_names": [
+        ".*-prod-.*",
+        ".*production.*"
+      ],
+      "tags": [
+        {
+          "key": "DoNotDelete"
+        },
+        {
+          "key": "Permanent"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Large Instance Cost Control",
+    "description": "Monitor and potentially cleanup large, expensive instance types in non-production",
+    "resource_types": [
+      "AWS::EC2::Instance"
+    ],
+    "conditions": [
+      {
+        "field": "resource.metadata.instance_type",
+        "operator": "contains",
+        "value": "xlarge"
+      },
+      {
+        "field": "tags.Environment",
+        "operator": "not_equals",
+        "value": "production"
+      }
+    ],
+    "ttl_days": 14,
+    "warning_days_before": 7,
+    "actions": [
+      {
+        "type": "warn",
+        "days_before": 7
+      },
+      {
+        "type": "warn", 
+        "days_before": 3
+      },
+      {
+        "type": "warn",
+        "days_before": 1
+      }
+    ],
+    "priority": 75,
+    "enabled": true,
+    "auto_apply": false,
+    "require_confirmation": true,
+    "max_deletions_per_day": 5,
+    "exclude_patterns": {
+      "tags": [
+        {
+          "key": "DoNotDelete",
+          "value": "true"
+        },
+        {
+          "key": "CostApproved",
+          "value": "true"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Development S3 Bucket Cleanup",
+    "description": "Clean up development S3 buckets that haven't been accessed recently",
+    "resource_types": [
+      "AWS::S3::Bucket"
+    ],
+    "conditions": [
+      {
+        "field": "tags.Environment",
+        "operator": "in",
+        "value": ["development", "dev", "test", "sandbox"]
+      },
+      {
+        "field": "resource.metadata.last_accessed",
+        "operator": "older_than_days",
+        "value": 30
+      }
+    ],
+    "ttl_days": 60,
+    "warning_days_before": 14,
+    "actions": [
+      {
+        "type": "warn",
+        "days_before": 14
+      },
+      {
+        "type": "warn",
+        "days_before": 7
+      }
+    ],
+    "priority": 150,
+    "enabled": false,
+    "auto_apply": false,
+    "require_confirmation": true,
+    "max_deletions_per_day": 3,
+    "exclude_patterns": {
+      "resource_names": [
+        ".*-backup.*",
+        ".*-archive.*",
+        ".*-logs.*"
+      ],
+      "tags": [
+        {
+          "key": "DoNotDelete"
+        },
+        {
+          "key": "DataRetention"
+        }
+      ]
+    }
+  }
+]

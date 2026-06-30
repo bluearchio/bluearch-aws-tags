@@ -1,0 +1,186 @@
+[
+  {
+    "name": "auto_tag_by_creator",
+    "description": "Automatically tag resources with creator information from CloudTrail",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "resource.created_at",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "CreatedBy",
+        "value": "{{ principal.user_name | default('unknown') }}"
+      },
+      {
+        "key": "CreatedByType",
+        "value": "{{ principal.type | default('unknown') }}"
+      },
+      {
+        "key": "CreatedAt",
+        "value": "{{ resource.created_at.strftime('%Y-%m-%d') if resource.created_at else date }}"
+      },
+      {
+        "key": "AutoTagged",
+        "value": "true"
+      }
+    ],
+    "priority": 100,
+    "enabled": true
+  },
+  {
+    "name": "environment_classification",
+    "description": "Classify resources into environments based on naming patterns",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Environment",
+        "value": "{% if 'prod' in resource.name.lower() %}production{% elif 'stage' in resource.name.lower() or 'staging' in resource.name.lower() %}staging{% elif 'dev' in resource.name.lower() %}development{% elif 'test' in resource.name.lower() %}testing{% else %}unknown{% endif %}"
+      },
+      {
+        "key": "EnvironmentClassification",
+        "value": "automated"
+      }
+    ],
+    "priority": 200,
+    "enabled": true
+  },
+  {
+    "name": "cost_center_from_user",
+    "description": "Assign cost center based on user identity patterns",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "principal.user_name",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "CostCenter",
+        "value": "{% if 'dev' in principal.user_name.lower() %}engineering{% elif 'ops' in principal.user_name.lower() %}operations{% elif 'data' in principal.user_name.lower() %}data-science{% else %}general{% endif %}"
+      },
+      {
+        "key": "Owner",
+        "value": "{{ principal.user_name | default('unknown') }}"
+      }
+    ],
+    "priority": 150,
+    "enabled": true
+  },
+  {
+    "name": "security_compliance_tagging",
+    "description": "Apply security and compliance tags based on resource characteristics",
+    "resource_types": [
+      "AWS::S3::Bucket",
+      "AWS::EC2::Instance",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "resource.region",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "ComplianceScope",
+        "value": "{% if resource.region.startswith('us-gov') %}government{% elif resource.region.startswith('eu-') %}gdpr{% else %}standard{% endif %}"
+      },
+      {
+        "key": "DataClassification",
+        "value": "{% if 'prod' in (resource.tags.Environment | default('')) %}sensitive{% else %}internal{% endif %}"
+      },
+      {
+        "key": "BackupRequired",
+        "value": "{% if resource.type == 'AWS::EC2::Instance' or resource.type == 'AWS::EC2::Volume' %}true{% else %}false{% endif %}"
+      }
+    ],
+    "priority": 300,
+    "enabled": true
+  },
+  {
+    "name": "project_tagging_from_context",
+    "description": "Infer project information from resource context and naming",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Project",
+        "value": "{% set name_parts = resource.name.lower().split('-') %}{% if name_parts|length >= 2 %}{{ name_parts[0] }}-{{ name_parts[1] }}{% else %}{{ resource.name.lower() }}{% endif %}"
+      },
+      {
+        "key": "ResourcePurpose",
+        "value": "{% if 'web' in resource.name.lower() %}web-server{% elif 'db' in resource.name.lower() or 'database' in resource.name.lower() %}database{% elif 'api' in resource.name.lower() %}api{% elif 'worker' in resource.name.lower() %}background-processing{% else %}application{% endif %}"
+      }
+    ],
+    "priority": 250,
+    "enabled": true
+  },
+  {
+    "name": "time_based_lifecycle_tagging",
+    "description": "Add lifecycle and time-based tags for resource management",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [],
+    "tag_templates": [
+      {
+        "key": "CreatedDate",
+        "value": "{{ date }}"
+      },
+      {
+        "key": "CreatedTime",
+        "value": "{{ time }}"
+      },
+      {
+        "key": "Quarter",
+        "value": "Q{{ ((now.month - 1) // 3) + 1 }}-{{ now.year }}"
+      },
+      {
+        "key": "LastTaggedBy",
+        "value": "tag-manager-cli"
+      },
+      {
+        "key": "LastTaggedAt",
+        "value": "{{ datetime }}"
+      }
+    ],
+    "priority": 400,
+    "enabled": true
+  }
+]

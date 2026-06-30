@@ -1,0 +1,32 @@
+[
+  {
+    "name": "environment_classification",
+    "description": "Classify resources into environments based on naming patterns",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Environment",
+        "value": "{% if 'prod' in resource.name.lower() %}Production{% elif 'staging' in resource.name.lower() or 'stage' in resource.name.lower() %}Staging{% elif 'dev' in resource.name.lower() %}Development{% elif 'test' in resource.name.lower() %}Testing{% else %}Unknown{% endif %}"
+      },
+      {
+        "key": "AutoClassified",
+        "value": "true"
+      }
+    ],
+    "priority": 200,
+    "enabled": true,
+    "created_at": "2025-08-23T23:31:28.294200",
+    "created_by": "tag-manager-cli"
+  }
+]

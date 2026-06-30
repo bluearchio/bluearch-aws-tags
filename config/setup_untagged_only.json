@@ -1,0 +1,80 @@
+[
+  {
+    "name": "setup_basic_governance_tags",
+    "description": "Add basic Environment tags to resources missing governance during setup",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket", 
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Volume",
+      "AWS::DynamoDB::Table"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      },
+      {
+        "field": "current_tags.Environment",
+        "operator": "not_exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Environment",
+        "value": "unknown"
+      },
+      {
+        "key": "ManagedBy",
+        "value": "tag-manager-setup"
+      },
+      {
+        "key": "NeedsReview",
+        "value": "true"
+      }
+    ],
+    "priority": 100,
+    "enabled": true,
+    "notes": "Setup rule: adds basic Environment governance tags to resources missing them"
+  },
+  {
+    "name": "setup_basic_owner_tags",
+    "description": "Add basic Owner tags to resources missing owner information during setup", 
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket", 
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Volume",
+      "AWS::DynamoDB::Table"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      },
+      {
+        "field": "current_tags.Owner",
+        "operator": "not_exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Owner",
+        "value": "unknown"
+      },
+      {
+        "key": "ManagedBy",
+        "value": "tag-manager-setup"
+      },
+      {
+        "key": "NeedsReview",
+        "value": "true"
+      }
+    ],
+    "priority": 100,
+    "enabled": true,
+    "notes": "Setup rule: adds basic Owner governance tags to resources missing them"
+  }
+]

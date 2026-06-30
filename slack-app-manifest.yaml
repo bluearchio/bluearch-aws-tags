@@ -1,0 +1,136 @@
+display_information:
+  name: AWS Tag Manager Bot
+  description: Manage AWS tags with approval workflows, notifications, and CLI integration
+  background_color: "#232F3E"
+  long_description: |
+    AWS Tag Manager Bot enables teams to manage AWS resource tags efficiently through Slack. 
+    
+    Features:
+    - Interactive approval workflows for tag operations
+    - Real-time notifications for AWS resource changes
+    - Slash commands for quick tag management
+    - Cost analysis and compliance reporting
+    - Audit trails for all operations
+    
+    Perfect for DevOps teams managing AWS resources at scale.
+
+features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: AWS Tag Manager
+    always_online: true
+  slash_commands:
+    # === CORE TAG OPERATIONS ===
+    - command: /tag-scan
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-scan
+      description: Scan AWS resources for missing required tags
+      usage_hint: "[--services ec2,s3] [--regions us-east-1] [--required-tags Environment,Owner]"
+      should_escape: false
+    - command: /tag-apply
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-apply
+      description: Apply tags to AWS resources (interactive or automated)
+      usage_hint: "[--mode interactive|auto] [--services ec2,s3] [--limit 20] [--dry-run]"
+      should_escape: false
+    - command: /tag-bulk
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-bulk
+      description: Bulk tag operations on multiple resources
+      usage_hint: "[--operation add|remove|replace] [--tag-key Key] [--tag-value Value] [--filter]"
+      should_escape: false
+    - command: /tag-report
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-report
+      description: Generate comprehensive tag compliance reports
+      usage_hint: "[--format table|csv|json] [--scope account|region] [--compliance]"
+      should_escape: false
+    - command: /tag-validate
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-validate
+      description: Validate existing tags against compliance rules
+      usage_hint: "[--services ec2,s3] [--fix-violations]"
+      should_escape: false
+    - command: /tag-rules
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-rules
+      description: Manage automated tagging rules
+      usage_hint: "[--action list|create|delete] [--rule-name]"
+      should_escape: false
+    - command: /tag-lifecycle
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-lifecycle
+      description: Manage tag lifecycle policies
+      usage_hint: "[--action create|list|delete] [--policy-name]"
+      should_escape: false
+    
+    # === WORKFLOW MANAGEMENT ===
+    - command: /tag-status
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-status
+      description: View current tag operations status
+      usage_hint: "[execution-id]"
+      should_escape: false
+    - command: /tag-approve
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-approve
+      description: Approve a pending tag operation
+      usage_hint: "<execution-id> [reason]"
+      should_escape: false
+    - command: /tag-reject
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-reject
+      description: Reject a pending tag operation
+      usage_hint: "<execution-id> [reason]"
+      should_escape: false
+    - command: /tag-history
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-history
+      description: View recent tag operation history
+      usage_hint: "[--limit 10] [--status pending|completed|failed]"
+      should_escape: false
+    - command: /tag-rollback
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-rollback
+      description: Rollback a tag operation
+      usage_hint: "<execution-id>"
+      should_escape: false
+    
+    # === ANALYSIS AND REPORTING ===
+    - command: /tag-cost
+      url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/commands/tag-cost
+      description: Get cost analysis for tagged resources
+      usage_hint: "--tag-key <key> --tag-value <value> [--days 30]"
+      should_escape: false
+
+oauth_config:
+  redirect_urls:
+    - https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/prod/oauth/callback
+  scopes:
+    bot:
+      - app_mentions:read
+      - channels:history
+      - channels:read
+      - chat:write
+      - chat:write.public
+      - commands
+      - groups:history
+      - groups:read
+      - im:history
+      - im:read
+      - im:write
+      - incoming-webhook
+      - mpim:history
+      - mpim:read
+      - users:read
+      - users:read.email
+      - team:read
+      - files:write
+      - files:read
+
+settings:
+  event_subscriptions:
+    request_url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/slack/events
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+      - message.mpim
+  interactivity:
+    is_enabled: true
+    request_url: https://78jkb3wr12.execute-api.us-east-1.amazonaws.com/dev/slack/interactive
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

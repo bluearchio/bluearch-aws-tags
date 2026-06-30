@@ -1,0 +1,444 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: |
+  Tag Manager CLI Demo Resources
+  Deploys a Lambda that generates demo resources with predictable tags.
+  Resources are automatically recreated if deleted (checked hourly).
+
+Parameters:
+  DemoPrefix:
+    Type: String
+    Default: "lifecycle-demo"
+    Description: Prefix for all demo resources
+
+  Environment:
+    Type: String
+    Default: "demo-test"
+    Description: Environment tag value (use 'contains' operator to match 'demo')
+
+  Project:
+    Type: String
+    Default: "zombie-cleanup-demo"
+    Description: Project tag value
+
+  Owner:
+    Type: String
+    Default: "demo-team@company.com"
+    Description: Owner email for demo resources
+
+Resources:
+  # IAM Role for the Resource Generator Lambda
+  ResourceGeneratorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DemoPrefix}-resource-generator-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ResourceGeneratorPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Lambda management
+              - Effect: Allow
+                Action:
+                  - lambda:CreateFunction
+                  - lambda:DeleteFunction
+                  - lambda:GetFunction
+                  - lambda:ListFunctions
+                  - lambda:TagResource
+                  - lambda:ListTags
+                Resource: "*"
+              # EC2 management
+              - Effect: Allow
+                Action:
+                  - ec2:RunInstances
+                  - ec2:TerminateInstances
+                  - ec2:DescribeInstances
+                  - ec2:CreateTags
+                  - ec2:DescribeImages
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSubnets
+                  - ec2:DescribeVpcs
+                Resource: "*"
+              # SNS management
+              - Effect: Allow
+                Action:
+                  - sns:CreateTopic
+                  - sns:DeleteTopic
+                  - sns:ListTopics
+                  - sns:GetTopicAttributes
+                  - sns:TagResource
+                  - sns:ListTagsForResource
+                Resource: "*"
+              # SQS management
+              - Effect: Allow
+                Action:
+                  - sqs:CreateQueue
+                  - sqs:DeleteQueue
+                  - sqs:ListQueues
+                  - sqs:GetQueueUrl
+                  - sqs:GetQueueAttributes
+                  - sqs:TagQueue
+                  - sqs:ListQueueTags
+                Resource: "*"
+              # CloudWatch Logs management
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:DeleteLogGroup
+                  - logs:DescribeLogGroups
+                  - logs:TagResource
+                  - logs:ListTagsForResource
+                Resource: "*"
+              # IAM PassRole for Lambda
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt DemoLambdaRole.Arn
+
+  # IAM Role for the generated demo Lambda functions
+  DemoLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${DemoPrefix}-function-role"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+
+  # The Resource Generator Lambda Function
+  ResourceGeneratorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${DemoPrefix}-resource-generator"
+      Description: "Generates and maintains demo resources for Tag Manager CLI demo"
+      Runtime: python3.11
+      Handler: index.handler
+      Role: !GetAtt ResourceGeneratorRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Environment:
+        Variables:
+          DEMO_PREFIX: !Ref DemoPrefix
+          ENVIRONMENT_TAG: !Ref Environment
+          PROJECT_TAG: !Ref Project
+          OWNER_TAG: !Ref Owner
+          DEMO_LAMBDA_ROLE_ARN: !GetAtt DemoLambdaRole.Arn
+          AWS_REGION_NAME: !Ref AWS::Region
+      Tags:
+        - Key: Purpose
+          Value: "tag-manager-demo-generator"
+        - Key: ManagedBy
+          Value: "cloudformation"
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import os
+          import time
+          import zipfile
+          import io
+
+          # Configuration from environment
+          DEMO_PREFIX = os.environ.get('DEMO_PREFIX', 'lifecycle-demo')
+          ENVIRONMENT_TAG = os.environ.get('ENVIRONMENT_TAG', 'demo-test')
+          PROJECT_TAG = os.environ.get('PROJECT_TAG', 'zombie-cleanup-demo')
+          OWNER_TAG = os.environ.get('OWNER_TAG', 'demo-team@company.com')
+          DEMO_LAMBDA_ROLE_ARN = os.environ.get('DEMO_LAMBDA_ROLE_ARN')
+          REGION = os.environ.get('AWS_REGION_NAME', 'us-east-1')
+
+          # Demo resources configuration
+          DEMO_LAMBDAS = [
+              {'name': 'data-processor', 'team': 'data-engineering'},
+              {'name': 'api-handler', 'team': 'backend'},
+              {'name': 'event-consumer', 'team': 'events'},
+              {'name': 'report-generator', 'team': 'analytics'},
+              {'name': 'notification-sender', 'team': 'notifications'},
+              {'name': 'cache-warmer', 'team': 'performance'},
+              {'name': 'batch-job', 'team': 'batch'},
+              {'name': 'webhook-receiver', 'team': 'integrations'},
+          ]
+
+          DEMO_SNS_TOPICS = [
+              {'name': 'alerts', 'team': 'ops'},
+              {'name': 'events', 'team': 'events'},
+          ]
+
+          DEMO_SQS_QUEUES = [
+              {'name': 'tasks', 'team': 'workers'},
+              {'name': 'notifications', 'team': 'notifications'},
+          ]
+
+          DEMO_LOG_GROUPS = [
+              {'name': 'app-logs', 'team': 'backend'},
+              {'name': 'audit-logs', 'team': 'security'},
+          ]
+
+          # Simple Lambda code for demo functions
+          DEMO_LAMBDA_CODE = '''def handler(event, context):
+              return {
+                  'statusCode': 200,
+                  'body': 'Demo function - managed by Tag Manager CLI demo'
+              }
+          '''
+
+          def create_lambda_zip(code):
+              """Create a proper ZIP file for Lambda deployment."""
+              zip_buffer = io.BytesIO()
+              with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                  zf.writestr('index.py', code)
+              zip_buffer.seek(0)
+              return zip_buffer.read()
+
+          def get_demo_tags(resource_type, name, team):
+              """Generate consistent demo tags."""
+              return {
+                  'Environment': ENVIRONMENT_TAG,
+                  'Project': PROJECT_TAG,
+                  'Owner': OWNER_TAG,
+                  'Name': f'{DEMO_PREFIX}-{name}',
+                  'Team': team,
+                  'ResourceType': resource_type,
+                  'ManagedBy': 'demo-generator',
+                  'DemoResource': 'true',
+              }
+
+          def ensure_lambdas(lambda_client):
+              """Ensure all demo Lambda functions exist."""
+              created = []
+              existing = []
+
+              # List existing functions
+              existing_functions = set()
+              paginator = lambda_client.get_paginator('list_functions')
+              for page in paginator.paginate():
+                  for func in page['Functions']:
+                      if func['FunctionName'].startswith(f'{DEMO_PREFIX}-'):
+                          existing_functions.add(func['FunctionName'])
+
+              for config in DEMO_LAMBDAS:
+                  func_name = f"{DEMO_PREFIX}-{config['name']}"
+                  tags = get_demo_tags('lambda', config['name'], config['team'])
+
+                  if func_name in existing_functions:
+                      existing.append(func_name)
+                      continue
+
+                  try:
+                      # Create the function with proper ZIP content
+                      zip_content = create_lambda_zip(DEMO_LAMBDA_CODE)
+                      lambda_client.create_function(
+                          FunctionName=func_name,
+                          Runtime='python3.11',
+                          Role=DEMO_LAMBDA_ROLE_ARN,
+                          Handler='index.handler',
+                          Code={'ZipFile': zip_content},
+                          Description=f'Demo function: {config["name"]}',
+                          Timeout=30,
+                          MemorySize=128,
+                          Tags=tags,
+                      )
+                      created.append(func_name)
+                      print(f'Created Lambda: {func_name}')
+                      time.sleep(0.5)  # Avoid rate limiting
+                  except Exception as e:
+                      print(f'Error creating Lambda {func_name}: {e}')
+
+              return {'created': created, 'existing': existing}
+
+          def ensure_sns_topics(sns_client):
+              """Ensure all demo SNS topics exist."""
+              created = []
+              existing = []
+
+              # List existing topics
+              existing_topics = set()
+              paginator = sns_client.get_paginator('list_topics')
+              for page in paginator.paginate():
+                  for topic in page['Topics']:
+                      arn = topic['TopicArn']
+                      name = arn.split(':')[-1]
+                      if name.startswith(f'{DEMO_PREFIX}-'):
+                          existing_topics.add(name)
+
+              for config in DEMO_SNS_TOPICS:
+                  topic_name = f"{DEMO_PREFIX}-{config['name']}"
+                  tags = get_demo_tags('sns', config['name'], config['team'])
+
+                  if topic_name in existing_topics:
+                      existing.append(topic_name)
+                      continue
+
+                  try:
+                      response = sns_client.create_topic(
+                          Name=topic_name,
+                          Tags=[{'Key': k, 'Value': v} for k, v in tags.items()],
+                      )
+                      created.append(topic_name)
+                      print(f'Created SNS topic: {topic_name}')
+                  except Exception as e:
+                      print(f'Error creating SNS topic {topic_name}: {e}')
+
+              return {'created': created, 'existing': existing}
+
+          def ensure_sqs_queues(sqs_client):
+              """Ensure all demo SQS queues exist."""
+              created = []
+              existing = []
+
+              # List existing queues
+              existing_queues = set()
+              try:
+                  response = sqs_client.list_queues(QueueNamePrefix=f'{DEMO_PREFIX}-')
+                  for url in response.get('QueueUrls', []):
+                      name = url.split('/')[-1]
+                      existing_queues.add(name)
+              except Exception:
+                  pass
+
+              for config in DEMO_SQS_QUEUES:
+                  queue_name = f"{DEMO_PREFIX}-{config['name']}"
+                  tags = get_demo_tags('sqs', config['name'], config['team'])
+
+                  if queue_name in existing_queues:
+                      existing.append(queue_name)
+                      continue
+
+                  try:
+                      response = sqs_client.create_queue(
+                          QueueName=queue_name,
+                          tags=tags,
+                      )
+                      created.append(queue_name)
+                      print(f'Created SQS queue: {queue_name}')
+                  except Exception as e:
+                      print(f'Error creating SQS queue {queue_name}: {e}')
+
+              return {'created': created, 'existing': existing}
+
+          def ensure_log_groups(logs_client):
+              """Ensure all demo CloudWatch Log Groups exist."""
+              created = []
+              existing = []
+
+              # List existing log groups
+              existing_groups = set()
+              paginator = logs_client.get_paginator('describe_log_groups')
+              for page in paginator.paginate(logGroupNamePrefix=f'/demo/{DEMO_PREFIX}'):
+                  for group in page['logGroups']:
+                      existing_groups.add(group['logGroupName'])
+
+              for config in DEMO_LOG_GROUPS:
+                  log_group_name = f"/demo/{DEMO_PREFIX}/{config['name']}"
+                  tags = get_demo_tags('logs', config['name'], config['team'])
+
+                  if log_group_name in existing_groups:
+                      existing.append(log_group_name)
+                      continue
+
+                  try:
+                      logs_client.create_log_group(
+                          logGroupName=log_group_name,
+                          tags=tags,
+                      )
+                      created.append(log_group_name)
+                      print(f'Created Log Group: {log_group_name}')
+                  except Exception as e:
+                      print(f'Error creating Log Group {log_group_name}: {e}')
+
+              return {'created': created, 'existing': existing}
+
+          def handler(event, context):
+              """Main handler - ensure all demo resources exist."""
+              print(f'Demo Resource Generator starting...')
+              print(f'Prefix: {DEMO_PREFIX}')
+              print(f'Environment tag: {ENVIRONMENT_TAG}')
+              print(f'Project tag: {PROJECT_TAG}')
+
+              # Initialize clients
+              lambda_client = boto3.client('lambda', region_name=REGION)
+              sns_client = boto3.client('sns', region_name=REGION)
+              sqs_client = boto3.client('sqs', region_name=REGION)
+              logs_client = boto3.client('logs', region_name=REGION)
+
+              results = {
+                  'lambdas': ensure_lambdas(lambda_client),
+                  'sns_topics': ensure_sns_topics(sns_client),
+                  'sqs_queues': ensure_sqs_queues(sqs_client),
+                  'log_groups': ensure_log_groups(logs_client),
+              }
+
+              # Summary
+              total_created = sum(len(r['created']) for r in results.values())
+              total_existing = sum(len(r['existing']) for r in results.values())
+
+              print(f'\nSummary:')
+              print(f'  Created: {total_created} resources')
+              print(f'  Already existing: {total_existing} resources')
+
+              return {
+                  'statusCode': 200,
+                  'body': json.dumps({
+                      'message': 'Demo resources ensured',
+                      'created': total_created,
+                      'existing': total_existing,
+                      'details': results,
+                  })
+              }
+
+  # CloudWatch Events Rule to run the generator hourly
+  HourlyTriggerRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub "${DemoPrefix}-hourly-check"
+      Description: "Triggers demo resource generator every hour"
+      ScheduleExpression: "rate(1 hour)"
+      State: ENABLED
+      Targets:
+        - Id: ResourceGeneratorTarget
+          Arn: !GetAtt ResourceGeneratorFunction.Arn
+
+  # Permission for CloudWatch Events to invoke Lambda
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ResourceGeneratorFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt HourlyTriggerRule.Arn
+
+Outputs:
+  ResourceGeneratorFunctionArn:
+    Description: ARN of the Resource Generator Lambda
+    Value: !GetAtt ResourceGeneratorFunction.Arn
+    Export:
+      Name: !Sub "${DemoPrefix}-generator-arn"
+
+  DemoPrefix:
+    Description: Prefix used for all demo resources
+    Value: !Ref DemoPrefix
+
+  DemoTags:
+    Description: Tags used for demo resources (for policy creation)
+    Value: !Sub |
+      Environment: ${Environment}
+      Project: ${Project}
+      Owner: ${Owner}
+      DemoResource: true
+
+  InvokeCommand:
+    Description: Command to manually trigger resource generation
+    Value: !Sub |
+      aws lambda invoke --function-name ${DemoPrefix}-resource-generator /tmp/response.json && cat /tmp/response.json

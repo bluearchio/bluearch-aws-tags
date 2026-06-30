@@ -1,0 +1,275 @@
+[
+  {
+    "name": "lifecycle_auto_tagging",
+    "description": "Automatically tag resources with lifecycle information based on creation patterns",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "resource.created_at",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "CreatedDate",
+        "value": "{{ resource.created_at.strftime('%Y-%m-%d') if resource.created_at else date }}"
+      },
+      {
+        "key": "CreatedWeek",
+        "value": "{{ resource.created_at.strftime('%Y-W%U') if resource.created_at else now.strftime('%Y-W%U') }}"
+      },
+      {
+        "key": "CreatedMonth",
+        "value": "{{ resource.created_at.strftime('%Y-%m') if resource.created_at else now.strftime('%Y-%m') }}"
+      },
+      {
+        "key": "AgeCategory",
+        "value": "{% set age_days = (now - resource.created_at).days if resource.created_at else 0 %}{% if age_days < 7 %}new{% elif age_days < 30 %}recent{% elif age_days < 90 %}established{% else %}old{% endif %}"
+      },
+      {
+        "key": "LifecycleStage",
+        "value": "{% if 'temp' in resource.name.lower() or 'test' in resource.name.lower() %}temporary{% elif 'dev' in resource.name.lower() %}development{% elif 'stage' in resource.name.lower() %}staging{% elif 'prod' in resource.name.lower() %}production{% else %}unknown{% endif %}"
+      }
+    ],
+    "priority": 50,
+    "enabled": true
+  },
+  {
+    "name": "cost_optimization_tagging",
+    "description": "Tag resources with cost-related metadata for optimization and tracking",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::RDS::DBInstance",
+      "AWS::Redshift::Cluster",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "resource.region",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "CostCategory",
+        "value": "{% if resource.type == 'AWS::EC2::Instance' and 'large' in (resource.metadata.instance_type or '') %}high-cost{% elif resource.type in ['AWS::RDS::DBInstance', 'AWS::Redshift::Cluster'] %}database-cost{% else %}standard-cost{% endif %}"
+      },
+      {
+        "key": "OptimizationCandidate",
+        "value": "{% set age_days = (now - resource.created_at).days if resource.created_at else 0 %}{% if age_days > 90 and resource.type == 'AWS::EC2::Instance' %}yes{% else %}no{% endif %}"
+      },
+      {
+        "key": "CostAlert",
+        "value": "{% if resource.type == 'AWS::EC2::Instance' and ('xlarge' in (resource.metadata.instance_type or '') or '2xlarge' in (resource.metadata.instance_type or '')) %}monitor{% else %}standard{% endif %}"
+      },
+      {
+        "key": "BillingPeriod",
+        "value": "{{ now.strftime('%Y-%m') }}"
+      }
+    ],
+    "priority": 75,
+    "enabled": true
+  },
+  {
+    "name": "compliance_security_tagging",
+    "description": "Apply compliance and security-focused tags based on resource characteristics",
+    "resource_types": [
+      "AWS::S3::Bucket",
+      "AWS::EC2::Instance",
+      "AWS::RDS::DBInstance",
+      "AWS::Lambda::Function"
+    ],
+    "conditions": [
+      {
+        "field": "resource.region",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "ComplianceScope",
+        "value": "{% if resource.region.startswith('us-gov') %}government{% elif resource.region.startswith('eu-') %}gdpr{% elif resource.region.startswith('ap-') %}apac{% else %}standard{% endif %}"
+      },
+      {
+        "key": "DataClassification",
+        "value": "{% if 'prod' in (resource.tags.Environment or '').lower() %}sensitive{% elif 'dev' in (resource.tags.Environment or '').lower() %}development{% else %}internal{% endif %}"
+      },
+      {
+        "key": "SecurityReview",
+        "value": "{% if resource.type == 'AWS::S3::Bucket' %}required{% elif resource.type == 'AWS::RDS::DBInstance' %}required{% else %}optional{% endif %}"
+      },
+      {
+        "key": "EncryptionRequired",
+        "value": "{% if resource.type in ['AWS::S3::Bucket', 'AWS::RDS::DBInstance'] %}yes{% else %}optional{% endif %}"
+      },
+      {
+        "key": "AccessLevel",
+        "value": "{% if 'public' in resource.name.lower() or 'web' in resource.name.lower() %}public{% elif 'internal' in resource.name.lower() %}internal{% else %}private{% endif %}"
+      }
+    ],
+    "priority": 80,
+    "enabled": true
+  },
+  {
+    "name": "time_to_live_tagging",
+    "description": "Automatically set TTL tags based on resource patterns and environment",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "resource.created_at",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "TTLDays",
+        "value": "{% if 'temp' in resource.name.lower() %}1{% elif 'test' in resource.name.lower() or 'dev' in resource.name.lower() %}7{% elif 'stage' in resource.name.lower() %}30{% elif 'demo' in resource.name.lower() %}3{% else %}90{% endif %}"
+      },
+      {
+        "key": "ExpiresOn",
+        "value": "{% set ttl_days = 1 if 'temp' in resource.name.lower() else (7 if 'test' in resource.name.lower() or 'dev' in resource.name.lower() else (30 if 'stage' in resource.name.lower() else (3 if 'demo' in resource.name.lower() else 90))) %}{{ (now + timedelta(days=ttl_days)).strftime('%Y-%m-%d') }}"
+      },
+      {
+        "key": "DeleteAfter",
+        "value": "{% set ttl_days = 1 if 'temp' in resource.name.lower() else (7 if 'test' in resource.name.lower() or 'dev' in resource.name.lower() else (30 if 'stage' in resource.name.lower() else (3 if 'demo' in resource.name.lower() else 90))) %}{{ (now + timedelta(days=ttl_days + 7)).strftime('%Y-%m-%d') }}"
+      },
+      {
+        "key": "LifecycleAction",
+        "value": "{% if 'temp' in resource.name.lower() or 'test' in resource.name.lower() %}auto-delete{% elif 'dev' in resource.name.lower() %}warn-then-delete{% else %}notify-owner{% endif %}"
+      }
+    ],
+    "priority": 60,
+    "enabled": true
+  },
+  {
+    "name": "operational_metadata_tagging",
+    "description": "Add operational metadata for monitoring and alerting purposes",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::Lambda::Function",
+      "AWS::S3::Bucket",
+      "AWS::RDS::DBInstance"
+    ],
+    "conditions": [
+      {
+        "field": "resource.service_name",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "MonitoringLevel",
+        "value": "{% if 'prod' in (resource.tags.Environment or '').lower() %}high{% elif 'stage' in (resource.tags.Environment or '').lower() %}medium{% else %}low{% endif %}"
+      },
+      {
+        "key": "BackupRequired",
+        "value": "{% if resource.type in ['AWS::EC2::Instance', 'AWS::RDS::DBInstance'] and 'prod' in (resource.tags.Environment or '').lower() %}daily{% elif resource.type == 'AWS::S3::Bucket' %}automatic{% else %}optional{% endif %}"
+      },
+      {
+        "key": "AlertingGroup",
+        "value": "{% if resource.type == 'AWS::Lambda::Function' %}serverless{% elif resource.type == 'AWS::RDS::DBInstance' %}database{% elif resource.type == 'AWS::EC2::Instance' %}compute{% else %}general{% endif %}"
+      },
+      {
+        "key": "MaintenanceWindow",
+        "value": "{% if 'prod' in (resource.tags.Environment or '').lower() %}weekend{% elif 'stage' in (resource.tags.Environment or '').lower() %}evenings{% else %}anytime{% endif %}"
+      },
+      {
+        "key": "SLARequirement",
+        "value": "{% if 'prod' in (resource.tags.Environment or '').lower() %}99.9%{% elif 'stage' in (resource.tags.Environment or '').lower() %}99.0%{% else %}95.0%{% endif %}"
+      }
+    ],
+    "priority": 90,
+    "enabled": true
+  },
+  {
+    "name": "resource_relationship_tagging",
+    "description": "Tag resources with relationship and dependency information",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::Lambda::Function",
+      "AWS::S3::Bucket",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "ApplicationStack",
+        "value": "{% set name_parts = resource.name.lower().split('-') %}{% if name_parts|length >= 2 %}{{ name_parts[0] }}-{{ name_parts[1] }}{% else %}standalone{% endif %}"
+      },
+      {
+        "key": "ServiceTier",
+        "value": "{% if 'web' in resource.name.lower() or 'frontend' in resource.name.lower() %}presentation{% elif 'api' in resource.name.lower() or 'service' in resource.name.lower() %}application{% elif 'db' in resource.name.lower() or 'data' in resource.name.lower() %}data{% else %}support{% endif %}"
+      },
+      {
+        "key": "DependencyLevel",
+        "value": "{% if 'db' in resource.name.lower() or 'database' in resource.name.lower() %}critical{% elif 'api' in resource.name.lower() %}high{% elif 'web' in resource.name.lower() %}medium{% else %}low{% endif %}"
+      },
+      {
+        "key": "ScalingGroup",
+        "value": "{% if resource.type == 'AWS::EC2::Instance' %}compute-{{ resource.region }}{% elif resource.type == 'AWS::Lambda::Function' %}serverless-{{ resource.region }}{% else %}static-{{ resource.region }}{% endif %}"
+      }
+    ],
+    "priority": 100,
+    "enabled": true
+  },
+  {
+    "name": "governance_and_policy_tagging",
+    "description": "Apply governance tags for policy enforcement and reporting",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Volume"
+    ],
+    "conditions": [
+      {
+        "field": "resource.account_id",
+        "operator": "exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "GovernancePolicy",
+        "value": "{% if 'prod' in (resource.tags.Environment or '').lower() %}strict{% elif 'stage' in (resource.tags.Environment or '').lower() %}moderate{% else %}flexible{% endif %}"
+      },
+      {
+        "key": "AutoShutdown",
+        "value": "{% if 'dev' in (resource.tags.Environment or '').lower() or 'test' in (resource.tags.Environment or '').lower() %}enabled{% else %}disabled{% endif %}"
+      },
+      {
+        "key": "ResourceReview",
+        "value": "{{ (now + timedelta(days=30)).strftime('%Y-%m-%d') }}"
+      },
+      {
+        "key": "ComplianceCheck",
+        "value": "{{ now.strftime('%Y-%m') }}"
+      },
+      {
+        "key": "PolicyVersion",
+        "value": "2024.1"
+      },
+      {
+        "key": "TaggedBy",
+        "value": "tag-manager-automation"
+      }
+    ],
+    "priority": 110,
+    "enabled": true
+  }
+]

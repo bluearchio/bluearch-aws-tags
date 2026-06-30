@@ -1,0 +1,117 @@
+[
+  {
+    "name": "safe_defaults_for_untagged",
+    "description": "Apply safe default tags to resources missing core governance tags",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Volume",
+      "AWS::DynamoDB::Table",
+      "AWS::ECS::Service",
+      "AWS::EKS::Cluster"
+    ],
+    "conditions": [
+      {
+        "field": "current_tags.Environment",
+        "operator": "not_exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Environment",
+        "value": "unknown"
+      },
+      {
+        "key": "ManagedBy",
+        "value": "tag-manager-setup"
+      },
+      {
+        "key": "NeedsReview",
+        "value": "true"
+      },
+      {
+        "key": "DiscoveredDate",
+        "value": "{{ date }}"
+      }
+    ],
+    "priority": 100,
+    "enabled": true,
+    "notes": "Safe defaults that won't break anything - marks resources for review"
+  },
+  {
+    "name": "owner_tags_for_untagged",
+    "description": "Apply default Owner tags to resources missing owner information",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance",
+      "AWS::EC2::Volume",
+      "AWS::DynamoDB::Table",
+      "AWS::ECS::Service",
+      "AWS::EKS::Cluster"
+    ],
+    "conditions": [
+      {
+        "field": "current_tags.Owner",
+        "operator": "not_exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "Owner",
+        "value": "unknown"
+      },
+      {
+        "key": "ManagedBy",
+        "value": "tag-manager-setup"
+      },
+      {
+        "key": "NeedsReview",
+        "value": "true"
+      }
+    ],
+    "priority": 100,
+    "enabled": true,
+    "notes": "Add Owner tag to resources missing owner information"
+  },
+  {
+    "name": "environment_detection",
+    "description": "Intelligently detect environment based on resource naming patterns",
+    "resource_types": [
+      "AWS::EC2::Instance",
+      "AWS::S3::Bucket",
+      "AWS::Lambda::Function",
+      "AWS::RDS::DBInstance"
+    ],
+    "conditions": [
+      {
+        "field": "resource.name",
+        "operator": "exists"
+      },
+      {
+        "field": "current_tags.Environment",
+        "operator": "not_exists"
+      },
+      {
+        "field": "current_tags.DetectedEnvironment",
+        "operator": "not_exists"
+      }
+    ],
+    "tag_templates": [
+      {
+        "key": "DetectedEnvironment",
+        "value": "{% if 'prod' in resource.name.lower() %}production{% elif 'stage' in resource.name.lower() %}staging{% elif 'dev' in resource.name.lower() %}development{% else %}unknown{% endif %}"
+      },
+      {
+        "key": "ConfidenceLevel",
+        "value": "medium"
+      }
+    ],
+    "priority": 150,
+    "enabled": true,
+    "notes": "Non-intrusive environment detection - uses separate key to avoid conflicts"
+  }
+]
