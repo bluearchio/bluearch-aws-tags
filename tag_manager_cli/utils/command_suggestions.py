@@ -94,8 +94,7 @@ class CommandSuggestions:
             "workers.start.success": [
                 {"cmd": "workers status", "desc": "Verify workers are running"},
                 {"cmd": "workers health", "desc": "Check worker health"},
-                {"cmd": "tags apply --auto", "desc": "Enable automated tagging"},
-                {"cmd": "slack worker start", "desc": "Start Slack integration"}
+                {"cmd": "tags apply --auto", "desc": "Enable automated tagging"}
             ],
             "workers.stop.success": [
                 {"cmd": "workers status", "desc": "Verify workers stopped"},
@@ -144,35 +143,10 @@ class CommandSuggestions:
                 {"cmd": "lifecycle wizard", "desc": "Complete guided lifecycle workflow"},
                 {"cmd": "lifecycle scan", "desc": "Scan and discover resources"}
             ],
-            "setup.wizard.skipped_slack": [
+            "setup.wizard.skipped_notifications": [
                 {"cmd": "lifecycle scan", "desc": "Scan and discover resources"},
                 {"cmd": "lifecycle wizard", "desc": "Complete guided lifecycle workflow"},
                 {"cmd": "setup validate", "desc": "Verify system health"}
-            ],
-
-            # Slack commands
-            "slack.setup.success": [
-                {"cmd": "slack test", "desc": "Test Slack connection"},
-                {"cmd": "slack worker start", "desc": "Start Slack bot daemon"},
-                {"cmd": "slack status", "desc": "Check integration status"},
-                {"cmd": "tags apply --slack-notify", "desc": "Tag with Slack notifications"}
-            ],
-            "slack.test.success": [
-                {"cmd": "slack worker start", "desc": "Start the Slack daemon"},
-                {"cmd": "slack status", "desc": "View detailed status"},
-                {"cmd": "tags apply --slack-approval", "desc": "Use Slack approval workflow"},
-                {"cmd": "tags rules create --slack-notify", "desc": "Create rules with notifications"}
-            ],
-            "slack.worker.started": [
-                {"cmd": "slack status", "desc": "Verify worker is running"},
-                {"cmd": "slack test", "desc": "Send test message"},
-                {"cmd": "tags apply --slack-approval", "desc": "Try approval workflow"},
-                {"cmd": "service install", "desc": "Install as system service"}
-            ],
-            "slack.worker.stopped": [
-                {"cmd": "slack worker start", "desc": "Restart when ready"},
-                {"cmd": "service stop", "desc": "Stop system service too"},
-                {"cmd": "slack status", "desc": "Check current status"}
             ],
 
             # Update commands
@@ -315,7 +289,7 @@ class CommandSuggestions:
             ],
             "automation": [
                 "Enable workers for background processing and automation",
-                "Use Slack integration for approval workflows",
+                "Use lifecycle webhook notifications for expiration alerts",
                 "Tagging rules can use regex patterns for flexible matching",
                 "Auto-tagging runs continuously when workers are active"
             ],
@@ -538,11 +512,6 @@ class CommandSuggestions:
                 {"cmd": "workers health --auto-fix", "desc": "Auto-fix worker issues"},
                 {"cmd": "workers restart", "desc": "Restart worker processes"},
                 {"cmd": "setup validate", "desc": "Check service health"}
-            ],
-            "slack": [
-                {"cmd": "slack setup", "desc": "Reconfigure Slack integration"},
-                {"cmd": "slack test", "desc": "Test Slack connection"},
-                {"cmd": "setup validate", "desc": "Check system status"}
             ],
             "docker": [
                 {"cmd": "docker start", "desc": "Start Docker services"},

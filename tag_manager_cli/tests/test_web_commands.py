@@ -13,12 +13,12 @@ def test_daemon_command_uses_module_when_running_from_python(monkeypatch, tmp_pa
     python.chmod(0o755)
     monkeypatch.setattr(sys, "executable", os.fspath(python))
 
-    cmd = web._build_daemon_cmd("0.0.0.0", 8096, "info")
+    cmd = web._build_daemon_cmd("127.0.0.1", 8096, "info")
 
     assert cmd == [
         os.fspath(python), "-m", "tag_manager_cli.main",
         "web", "start",
-        "--host", "0.0.0.0", "--port", "8096",
+        "--host", "127.0.0.1", "--port", "8096",
         "--log-level", "info",
         "--no-browser",
     ]
@@ -101,7 +101,7 @@ def test_fixed_sso_port_does_not_fallback(monkeypatch):
         lambda host, port: (_ for _ in ()).throw(AssertionError("should not fallback")),
     )
 
-    assert web._resolve_start_port("0.0.0.0", 8096) == 8096
+    assert web._resolve_start_port("127.0.0.1", 8096) == 8096
     assert called["stopped"] == 8096
 
 

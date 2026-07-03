@@ -21,9 +21,6 @@ PyYAML>=6.0.0
 sqlalchemy>=2.0.0
 alembic>=1.12.0
 
-# Optional: Slack integration (can be removed if not needed)
-slack-sdk>=3.26.0
-
 # Optional: System monitoring (used in health checks)
 psutil>=5.9.0
 

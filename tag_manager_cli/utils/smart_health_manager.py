@@ -33,11 +33,6 @@ class SmartHealthManager:
 
         # Health check intervals (in seconds)
         self.intervals = {
-            'slack_worker': {
-                'healthy': 300,      # 5 minutes when healthy
-                'unhealthy': 30,     # 30 seconds when unhealthy
-                'critical': 10       # 10 seconds if critical issues
-            },
             'worker_discovery': {
                 'healthy': 1800,     # 30 minutes when healthy
                 'unhealthy': 600,    # 10 minutes when unhealthy
@@ -58,7 +53,7 @@ class SmartHealthManager:
 
         # Commands that need only lightweight checks
         self.lightweight_commands = {
-            'tags', 'slack', 'workers', 'interactive', 'cost'
+            'tags', 'workers', 'interactive', 'cost'
         }
 
     def _load_cache(self) -> Dict[str, HealthCacheEntry]:
@@ -206,32 +201,7 @@ class SmartHealthManager:
             else:
                 results['database_migration'] = {'checked': False, 'reason': 'cached'}
 
-            # 2. Slack Worker Check (medium priority, skip in lightweight)
-            if not lightweight and self._should_check_service('slack_worker', cache):
-                try:
-                    slack_result = health_manager.ensure_slack_worker_running()
-                    action = slack_result.action_taken if hasattr(slack_result, 'action_taken') else None
-
-                    cache['slack_worker'] = self._update_cache_entry(
-                        'slack_worker', slack_result.is_healthy, action, cache
-                    )
-
-                    results['slack_worker'] = {
-                        'checked': True,
-                        'healthy': slack_result.is_healthy,
-                        'action': action
-                    }
-                    checks_performed += 1
-
-                except Exception as e:
-                    cache['slack_worker'] = self._update_cache_entry(
-                        'slack_worker', False, None, cache
-                    )
-                    results['slack_worker'] = {'checked': True, 'healthy': False, 'error': str(e)}
-            else:
-                results['slack_worker'] = {'checked': False, 'reason': 'lightweight_or_cached'}
-
-            # 3. Worker Discovery Check (lowest priority, skip in lightweight)
+            # 2. Worker Discovery Check (lowest priority, skip in lightweight)
             if not lightweight and self._should_check_service('worker_discovery', cache):
                 try:
                     discovery_result = health_manager.ensure_worker_discovery_current()

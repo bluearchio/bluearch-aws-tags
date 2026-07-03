@@ -1,6 +1,5 @@
 <template>
   <div class="lifecycle-view">
-    <ProBadge feature="lifecycle:policies" label="Lifecycle Policies" />
     <!-- Actions Bar -->
     <div class="actions-bar">
       <button
@@ -584,7 +583,6 @@ import { useJobsStore } from '@/stores/jobs'
 import { useResourcesStore } from '@/stores/resources'
 import { useFormatters } from '@/composables/useFormatters'
 import type { PolicyResponse, PolicyCreateRequest, PolicySaveResult, ReviewResourceResponse } from '@/types/api'
-import ProBadge from '@/components/ProBadge.vue'
 import JobTracker from '@/components/JobTracker.vue'
 import PolicyFormDialog from '@/components/PolicyFormDialog.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'

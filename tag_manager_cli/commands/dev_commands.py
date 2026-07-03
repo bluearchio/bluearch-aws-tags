@@ -37,7 +37,6 @@ def show_dev_help():
 
     print_safe("[bold yellow]DEBUGGING TOOLS[/bold yellow] (troubleshoot issues):")
     print_safe("- [cyan]debug aws[/cyan]      - Debug AWS authentication and permissions")
-    print_safe("- [cyan]debug slack[/cyan]    - Debug Slack integration and OAuth")
     print_safe("- [cyan]debug env[/cyan]      - Debug environment and configuration")
     print_safe("- [cyan]logs[/cyan]           - View detailed application logs\n")
 
@@ -153,7 +152,7 @@ def dev_status(
     
     # Core runtime and storage status
     try:
-        health = request_core("GET", "/api/v1/core/health", timeout=2.0)
+        health = request_core("GET", "/api/v1/core/health", service_token=False, timeout=2.0)
         status = "HEALTHY" if health.get("db_ready") else "UNHEALTHY"
         color = "green" if status == "HEALTHY" else "red"
         details = f"Core: {health.get('version', 'unknown')}"

@@ -127,13 +127,6 @@ ec2_client.describe_snapshots()
 - **bedrock:Converse** - New conversation API for Claude
 - **bedrock:ConverseStream** - Streaming conversation API
 
-#### DynamoDB
-- **dynamodb:GetItem** - Retrieve Slack OAuth tokens for integration
-- **dynamodb:DeleteItem** - Clean up expired tokens
-
-#### Systems Manager (SSM)
-- **ssm:GetParameter** - Retrieve configuration parameters (OAuth settings, SQS URLs)
-
 ## Validating Your Permissions
 
 ### Using setup validate Command
@@ -354,8 +347,6 @@ Here's where each permission is used in the codebase:
 | CUR | Report definitions | finops/cur_setup.py |
 | Resource Groups | Tag operations | resource_organization.py, unified_tags.py |
 | Bedrock | Converse | aws_assistant.py, ai_commands.py |
-| DynamoDB | Get/Delete | oauth_token_manager.py |
-| SSM | GetParameter | oauth_token_manager.py |
 
 ## Support
 

@@ -62,14 +62,6 @@ class FeatureStatus(BaseModel):
     note: Optional[str] = None
 
 
-class UpgradePath(BaseModel):
-    """Suggested next step to unlock additional features."""
-
-    next_tier: str
-    action: str
-    unlocks: List[str]
-
-
 class PermissionStatusResponse(BaseModel):
     """Full permission tier and feature availability for an account."""
 
@@ -78,4 +70,3 @@ class PermissionStatusResponse(BaseModel):
     checked_at: Optional[str] = None
     expires_at: Optional[str] = None
     features: Dict[str, FeatureStatus]
-    upgrade_path: Optional[UpgradePath] = None

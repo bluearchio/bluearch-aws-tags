@@ -14,6 +14,7 @@ from ..schemas.common import (
 from ...utils.core_client import request_core
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
+alias_router = APIRouter(tags=["system"])
 
 
 def _normalize_core_validation(payload: dict) -> SetupValidateResponse:
@@ -68,7 +69,7 @@ def _overall(statuses: list[str]) -> str:
 async def health_check():
     """Check system health through bluearch-core."""
     try:
-        core_health = request_core("GET", "/api/v1/core/health", timeout=5.0)
+        core_health = request_core("GET", "/api/v1/core/health", service_token=False, timeout=5.0)
         summary = request_core("GET", "/api/v1/resources/summary", timeout=5.0)
         try:
             from tag_manager_cli import __version__
@@ -85,6 +86,11 @@ async def health_check():
         )
     except Exception as exc:
         return HealthResponse(status="unhealthy", database=f"bluearch-core error: {exc}")
+
+
+@alias_router.get("/api/v1/health", response_model=HealthResponse)
+async def health_check_alias():
+    return await health_check()
 
 
 @router.get("/setup/validate", response_model=SetupValidateResponse)
@@ -147,4 +153,3 @@ async def get_iam_policy(_user: LocalUser = Depends(get_current_user)):
             return {"error": "IAM policy file not found"}
     except Exception as e:
         return {"error": f"Failed to load IAM policy: {e}"}
-

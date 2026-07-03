@@ -1,7 +1,5 @@
-import requests
 import os
 import sys
-from pathlib import Path
 from rich import console
 from rich.prompt import Prompt
 from .. import __version__
@@ -12,20 +10,6 @@ import io
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
-# Environment variables
-DEV = os.environ.get('TAG_MANAGER_DEBUG')
-
-# API URLs - API Gateway endpoints created by CloudFormation
-DEV_API_URL = "https://1yql92iom3.execute-api.us-east-1.amazonaws.com/dev"
-PROD_API_URL = "https://nmja7lzmzb.execute-api.us-east-1.amazonaws.com/prod"
-
-def get_api_url(force_development: bool = False) -> str:
-    """Get the appropriate API URL based on environment or force flag."""
-    if force_development or DEV:
-        return DEV_API_URL
-    return PROD_API_URL
-
 
 def is_dev_version(version: str) -> bool:
     """
@@ -103,35 +87,9 @@ def delete_auto_update_command():
         shell_rc_manager.remove_command_from_shell_rc()
 
 def get_updates(force_development: bool = False):
+    """Return available updates.
+
+    Public builds do not call BlueArch-hosted release APIs. Distribution is
+    handled through GitHub Releases and Homebrew.
     """
-    Fetch available updates from the releases API.
-
-    Args:
-        force_development: If True, fetch from dev API regardless of environment.
-                          Default behavior: Use prod API unless TAG_MANAGER_DEBUG is set.
-    """
-    headers = {
-        'Content-Type': 'application/json'
-    }
-
-    payload = {
-        'version': __version__
-    }
-
-    endpoint = f"{get_api_url(force_development)}/get-updates"
-
-    try:
-        response = requests.post(endpoint, headers=headers, json=payload)
-        if response is None:
-            raise requests.exceptions.RequestException("No response received from the server")
-        response.raise_for_status()
-        data = response.json()
-        return data['updates']
-    except requests.exceptions.RequestException as req_ex:
-        if hasattr(req_ex, 'response') and req_ex.response is not None:
-            error_message = f"{req_ex.response.status_code} {req_ex.response.text}"
-        else:
-            error_message = f"{str(req_ex)}"
-        raise Exception(error_message)
-    except Exception as e:
-        raise Exception(f"An error occurred: {str(e)}")
+    return []

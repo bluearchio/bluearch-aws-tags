@@ -93,6 +93,7 @@ def create_app() -> FastAPI:
     _register_exception_handlers(app)
 
     # Register API routers
+    from .routers.system import alias_router as system_alias_router
     from .routers.system import router as system_router
     from .routers.setup import router as setup_router
     from .routers.resources import router as resources_router
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
     from .routers.notifications import router as notifications_router
 
     app.include_router(system_router)
+    app.include_router(system_alias_router)
     app.include_router(setup_router)
     app.include_router(resources_router)
     app.include_router(lifecycle_router)
@@ -181,7 +183,7 @@ def _verify_core_runtime() -> None:
     try:
         from ..utils.core_client import request_core
 
-        health = request_core("GET", "/api/v1/core/health", timeout=3.0)
+        health = request_core("GET", "/api/v1/core/health", service_token=False, timeout=3.0)
         logger.info(
             "bluearch-core connected: version=%s db=%s",
             health.get("version", "unknown"),

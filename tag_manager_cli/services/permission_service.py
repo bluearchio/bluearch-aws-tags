@@ -227,7 +227,6 @@ class PermissionService:
         # --- Compute tier & feature map -------------------------------
         tier = self.compute_tier(permissions)
         features = self.build_feature_map(permissions)
-        upgrade_path = self.compute_upgrade_path(tier)
         expires_at = now + timedelta(seconds=CACHE_TTL_SECONDS)
 
         # --- Persist to permission_tier (upsert) ----------------------
@@ -241,7 +240,6 @@ class PermissionService:
             "checked_at": now.isoformat(),
             "expires_at": expires_at.isoformat(),
             "features": features,
-            "upgrade_path": upgrade_path,
         }
 
     def get_cached_permissions(self, db, account_id, user_arn):
@@ -302,7 +300,7 @@ class PermissionService:
         Returns
         -------
         dict
-            ``{account_id, tier, checked_at, expires_at, features, upgrade_path}``
+            ``{account_id, tier, checked_at, expires_at, features}``
         """
         row = self._get_permission_tier(account_id, user_arn)
         if row is None:
@@ -312,7 +310,6 @@ class PermissionService:
                 "checked_at": None,
                 "expires_at": None,
                 "features": {},
-                "upgrade_path": self.compute_upgrade_path("none"),
             }
 
         features = row.get("features_json")
@@ -328,7 +325,6 @@ class PermissionService:
             "checked_at": checked_at,
             "expires_at": expires_at,
             "features": features,
-            "upgrade_path": self.compute_upgrade_path(row.get("tier")),
         }
 
     # ------------------------------------------------------------------
@@ -425,43 +421,6 @@ class PermissionService:
                 "services": services,
             }
         return result
-
-    def compute_upgrade_path(self, tier):
-        """Return the next upgrade step for the given tier, or None.
-
-        Returns
-        -------
-        dict or None
-        """
-        if tier == "none":
-            return {
-                "next_tier": "basic",
-                "action": "Grant iam:SimulatePrincipalPolicy to enable permission validation",
-                "unlocks": ["Permission validation", "Setup wizard"],
-            }
-        if tier == "basic":
-            return {
-                "next_tier": "standard",
-                "action": "Deploy the CLI Role via Setup > Infrastructure",
-                "unlocks": [
-                    "Resource discovery",
-                    "Tag operations",
-                    "Lifecycle management",
-                    "Cost reports",
-                    "AI assistant",
-                ],
-            }
-        if tier == "standard":
-            return {
-                "next_tier": "enterprise",
-                "action": "Deploy Cross-Account StackSet",
-                "unlocks": [
-                    "AWS Organizations compliance",
-                    "Cross-account management",
-                ],
-            }
-        # enterprise -- no further upgrade
-        return None
 
     # ------------------------------------------------------------------
     # Private helpers

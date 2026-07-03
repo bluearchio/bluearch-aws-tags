@@ -104,10 +104,8 @@
       ],
       "Resource": [
         "arn:aws:secretsmanager:*:*:secret:tag-manager-cli/*",
-        "arn:aws:secretsmanager:*:*:secret:tag-manager-slack-*",
         "arn:aws:secretsmanager:*:*:secret:bluearch-cli/*",
         "arn:aws:secretsmanager:*:*:secret:bluearch-*",
-        "arn:aws:secretsmanager:*:*:secret:bluearch-slack-*",
         "arn:aws:secretsmanager:*:*:secret:bluearch-alerting-engine-*"
       ]
     },

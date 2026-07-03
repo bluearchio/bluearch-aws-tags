@@ -1,19 +1,11 @@
 """Health check and automation manager for Tag Manager CLI."""
 
 import os
-import signal
 import subprocess
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
-
-# Optional psutil import for process monitoring
-try:
-    import psutil
-    PSUTIL_AVAILABLE = True
-except ImportError:
-    PSUTIL_AVAILABLE = False
 
 from ..utils.core_client import request_core
 from ..utils.display_utils import print_safe, print_error
@@ -35,169 +27,7 @@ class HealthManager:
     """Manages health checks and automated system maintenance."""
 
     def __init__(self):
-        self.slack_worker_pidfile = "/tmp/tag-manager-slack-worker.pid"
         self.discovery_task_name = "worker_discovery_all"
-        self.slack_health_task_name = "slack_worker_health_check"
-
-    def check_slack_worker_health(self) -> HealthCheckResult:
-        """Check if Slack worker daemon is running and healthy."""
-        try:
-            if not os.path.exists(self.slack_worker_pidfile):
-                return HealthCheckResult(
-                    service_name="slack_worker",
-                    is_healthy=False,
-                    status_message="PID file not found - worker not running",
-                    details={"pid_file": self.slack_worker_pidfile, "exists": False}
-                )
-
-            # Read PID from file
-            with open(self.slack_worker_pidfile, 'r') as f:
-                pid = int(f.read().strip())
-
-            # Check if process is running
-            if PSUTIL_AVAILABLE:
-                try:
-                    process = psutil.Process(pid)
-                    if process.is_running():
-                        # Check if it's actually our slack worker process
-                        cmdline = ' '.join(process.cmdline())
-                        if 'slack worker' in cmdline or 'slack_worker' in cmdline:
-                            return HealthCheckResult(
-                                service_name="slack_worker",
-                                is_healthy=True,
-                                status_message=f"Slack worker running (PID: {pid})",
-                                details={
-                                    "pid": pid,
-                                    "cpu_percent": process.cpu_percent(),
-                                    "memory_mb": process.memory_info().rss / 1024 / 1024,
-                                    "create_time": datetime.fromtimestamp(process.create_time()).isoformat(),
-                                    "cmdline": cmdline
-                                }
-                            )
-                        else:
-                            # PID exists but it's not our process
-                            os.remove(self.slack_worker_pidfile)
-                            return HealthCheckResult(
-                                service_name="slack_worker",
-                                is_healthy=False,
-                                status_message=f"PID {pid} exists but not slack worker - cleaned up stale PID file",
-                                details={"pid": pid, "cmdline": cmdline, "cleaned_up": True}
-                            )
-                    else:
-                        # Process not running, clean up PID file
-                        os.remove(self.slack_worker_pidfile)
-                        return HealthCheckResult(
-                            service_name="slack_worker",
-                            is_healthy=False,
-                            status_message=f"Process {pid} not running - cleaned up stale PID file",
-                            details={"pid": pid, "cleaned_up": True}
-                        )
-
-                except psutil.NoSuchProcess:
-                    # Process doesn't exist, clean up PID file
-                    os.remove(self.slack_worker_pidfile)
-                    return HealthCheckResult(
-                        service_name="slack_worker",
-                        is_healthy=False,
-                        status_message=f"Process {pid} does not exist - cleaned up stale PID file",
-                        details={"pid": pid, "cleaned_up": True}
-                    )
-            else:
-                # Fallback to simple process check using os.kill
-                try:
-                    os.kill(pid, 0)  # Signal 0 doesn't kill, just checks if process exists
-                    return HealthCheckResult(
-                        service_name="slack_worker",
-                        is_healthy=True,
-                        status_message=f"Slack worker process exists (PID: {pid}) - psutil not available for detailed check",
-                        details={"pid": pid, "psutil_available": False}
-                    )
-                except ProcessLookupError:
-                    # Process doesn't exist, clean up PID file
-                    os.remove(self.slack_worker_pidfile)
-                    return HealthCheckResult(
-                        service_name="slack_worker",
-                        is_healthy=False,
-                        status_message=f"Process {pid} does not exist - cleaned up stale PID file",
-                        details={"pid": pid, "cleaned_up": True, "psutil_available": False}
-                    )
-
-        except Exception as e:
-            logger.error(f"Error checking Slack worker health: {e}")
-            return HealthCheckResult(
-                service_name="slack_worker",
-                is_healthy=False,
-                status_message=f"Health check failed: {str(e)}",
-                details={"error": str(e)}
-            )
-
-    def start_slack_worker_daemon(self) -> bool:
-        """Start the Slack worker daemon if not running."""
-        try:
-            import sys
-
-            # Check if SQS_QUEUE_URL is configured
-            queue_url = os.getenv('SQS_QUEUE_URL')
-            if not queue_url:
-                logger.warning("SQS_QUEUE_URL not configured - cannot start Slack worker")
-                return False
-
-            # Build command to start Slack worker
-            cmd = [
-                sys.executable, "-m", "tag_manager_cli.main",
-                "slack", "worker", "--daemon"
-            ]
-
-            # Add queue URL if available
-            if queue_url:
-                cmd.extend(["--queue-url", queue_url])
-
-            logger.info(f"Starting Slack worker daemon: {' '.join(cmd)}")
-
-            # Start the process
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30
-            )
-
-            if result.returncode == 0:
-                logger.info("Slack worker daemon started successfully")
-                return True
-            else:
-                logger.error(f"Failed to start Slack worker: {result.stderr}")
-                return False
-
-        except Exception as e:
-            logger.error(f"Error starting Slack worker daemon: {e}")
-            return False
-
-    def ensure_slack_worker_running(self) -> HealthCheckResult:
-        """Ensure Slack worker is running, start if necessary."""
-        health_result = self.check_slack_worker_health()
-
-        if not health_result.is_healthy:
-            logger.info("Slack worker not healthy, attempting to start...")
-
-            if self.start_slack_worker_daemon():
-                # Wait a moment and check again
-                import time
-                time.sleep(2)
-
-                new_health_result = self.check_slack_worker_health()
-                if new_health_result.is_healthy:
-                    new_health_result.action_taken = "started_daemon"
-                    logger.info("Successfully started Slack worker daemon")
-                    return new_health_result
-                else:
-                    health_result.action_taken = "start_failed"
-                    logger.error("Failed to start Slack worker daemon")
-            else:
-                health_result.action_taken = "start_failed"
-                logger.error("Could not start Slack worker daemon")
-
-        return health_result
 
     def check_worker_discovery_staleness(self) -> HealthCheckResult:
         """Check if worker discovery is stale and needs to run."""
@@ -314,7 +144,7 @@ class HealthManager:
         try:
             _create_system_execution(
                 {
-                    "task_name": self.slack_health_task_name,
+                    "task_name": "worker_health_check",
                     "task_type": "health_check",
                     "last_execution_at": datetime.now(timezone.utc).isoformat(),
                     "execution_status": "success",
@@ -330,13 +160,6 @@ class HealthManager:
         results = []
 
         logger.info("Starting comprehensive health check...")
-
-        # Check Slack worker health
-        if auto_fix:
-            slack_result = self.ensure_slack_worker_running()
-        else:
-            slack_result = self.check_slack_worker_health()
-        results.append(slack_result)
 
         # Check worker discovery staleness
         if auto_fix:
@@ -355,15 +178,10 @@ class HealthManager:
     def get_health_summary(self) -> Dict[str, Any]:
         """Get a summary of system health status."""
         try:
-            slack_health = _get_last_system_execution(self.slack_health_task_name)
             worker_discovery = _get_last_system_execution(self.discovery_task_name)
             active_workers = _count_active_workers()
 
             return {
-                "slack_worker": {
-                    "status": "unknown",
-                    "last_health_check": _format_datetime(slack_health.get("last_execution_at")) if slack_health else None
-                },
                 "worker_discovery": {
                     "last_run": _format_datetime(worker_discovery.get("last_execution_at")) if worker_discovery else None,
                     "is_stale": _is_system_execution_stale(worker_discovery, 24),
@@ -500,12 +318,6 @@ health_manager = HealthManager()
 def run_automated_health_checks() -> List[HealthCheckResult]:
     """Run automated health checks - called from main command execution."""
     return health_manager.perform_comprehensive_health_check(auto_fix=True)
-
-
-def check_and_start_slack_worker() -> bool:
-    """Quick check and start of Slack worker if needed."""
-    result = health_manager.ensure_slack_worker_running()
-    return result.is_healthy
 
 
 def check_and_run_discovery_if_stale() -> bool:

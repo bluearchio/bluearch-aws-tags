@@ -1,0 +1,4 @@
+nuitka>=2.6.0
+ordered-set>=4.1.0
+zstandard>=0.23.0
+wheel>=0.43.0

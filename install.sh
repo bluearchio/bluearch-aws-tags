@@ -614,10 +614,10 @@ show_next_steps() {
     echo "  $COMPOSE_CMD down                      # Stop all services"
     echo "  $COMPOSE_CMD up -d                     # Start all services"
     echo ""
-    echo "${BLUE}Production Features:${NC}"
-    echo "  • Slack integration with OAuth (no local credentials)"
-    echo "  • System service for Slack worker (auto-start)"
-    echo "  • Configuration stored securely in AWS"
+    echo "${BLUE}Local Features:${NC}"
+    echo "  • User-owned AWS profiles and SSO"
+    echo "  • Local dashboard and CLI workflows"
+    echo "  • Optional webhook notifications"
     echo "  • Comprehensive error reporting and diagnostics"
     echo ""
     echo "For more information, visit:"
@@ -724,7 +724,7 @@ update() {
 main() {
     echo -e "${BLUE}AWS Tag Manager CLI Installer${NC}"
     echo "=============================="
-    echo -e "${CYAN}Production-ready installation with Slack integration${NC}"
+    echo -e "${CYAN}Local-first AWS tagging and governance tooling${NC}"
     echo ""
     
     # Check Docker and Docker Compose first (optional for production)

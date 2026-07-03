@@ -153,11 +153,6 @@ class IAMPermissionValidator:
             'iam:ListUsers',
             'iam:ListAccessKeys'
         ],
-        'slack integration': [
-            'dynamodb:GetItem',
-            'dynamodb:DeleteItem',
-            'ssm:GetParameter'
-        ],
         'authentication': [
             'sts:GetCallerIdentity'
         ],

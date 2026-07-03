@@ -12,7 +12,7 @@ setup:
 	cd frontend && npm ci
 
 backend-dev:
-	$(VENV)/bin/tag-manager web start --host 127.0.0.1 --port 8096
+	PYTHONPATH=. $(PY) -m tag_manager_cli.main web start --host 127.0.0.1 --port 8096
 
 frontend-dev:
 	cd frontend && npm run dev

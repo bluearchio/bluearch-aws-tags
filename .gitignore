@@ -124,7 +124,8 @@ aws-credentials
 alembic.ini
 
 # IDE files
-.vscode/
+.vscode/*
+!.vscode/extensions.json
 .idea/
 *.swp
 *.swo

@@ -163,15 +163,10 @@ if [[ "$aws_cleanup" =~ ^[Yy]$ ]]; then
     if command -v aws &> /dev/null; then
         echo "  Removing DynamoDB tables..."
         aws dynamodb delete-table --table-name tag-manager-config 2>/dev/null || true
-        aws dynamodb delete-table --table-name tag-manager-oauth-tokens 2>/dev/null || true
         
         echo "  Removing Parameter Store entries..."
         aws ssm delete-parameter --name "/tag-manager/dev/sqs-queue-url" 2>/dev/null || true
         aws ssm delete-parameter --name "/tag-manager/prod/sqs-queue-url" 2>/dev/null || true
-        aws ssm delete-parameter --name "/tag-manager/dev/oauth-callback-url" 2>/dev/null || true
-        aws ssm delete-parameter --name "/tag-manager/prod/oauth-callback-url" 2>/dev/null || true
-        aws ssm delete-parameter --name "/tag-manager/dev/slack-command-base-url" 2>/dev/null || true
-        aws ssm delete-parameter --name "/tag-manager/prod/slack-command-base-url" 2>/dev/null || true
         
         echo "  [OK] AWS resources cleanup completed"
     else

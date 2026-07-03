@@ -1,6 +1,5 @@
 <template>
   <div class="ma-view">
-    <ProBadge feature="cross_account" label="Multi-Account Management">
     <!-- Header -->
     <div class="ma-header">
       <div class="ma-header-left">
@@ -319,7 +318,6 @@
         </div>
       </div>
     </div>
-    </ProBadge>
   </div>
 </template>
 
@@ -328,8 +326,6 @@ import { ref, reactive, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { api } from '@/api/client'
 import { useJobsStore } from '@/stores/jobs'
-import { useLicenseStore } from '@/stores/license'
-import ProBadge from '@/components/ProBadge.vue'
 import type { StackSetStatusResponse, AccountRecord, AccountValidationResponse, TemplateMetadata } from '@/types/api'
 
 const router = useRouter()
@@ -552,10 +548,7 @@ function formatDate(iso?: string | null): string {
   }
 }
 
-const licenseStore = useLicenseStore()
-
 onMounted(() => {
-  if (!licenseStore.isFeatureAllowed('cross_account')) return
   loadStatus()
   loadValidation()
   loadTemplateMeta()

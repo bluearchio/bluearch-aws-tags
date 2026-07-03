@@ -65,5 +65,4 @@ EOF
 
 echo -e "${GREEN}[OK] AWS credentials exported to .env.aws-sso${NC}"
 echo -e "${YELLOW}[INFO] Credentials expire at: $EXPIRATION${NC}"
-echo -e "${GREEN}[INFO] Restart services with: source .env.aws-sso && docker compose up slack-worker -d --force-recreate${NC}"
-echo -e "${YELLOW}[INFO] Or use the CLI: tag-manager docker restart slack-worker${NC}"
+echo -e "${GREEN}[INFO] Restart local services after sourcing .env.aws-sso${NC}"

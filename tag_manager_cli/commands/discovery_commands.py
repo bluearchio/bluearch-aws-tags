@@ -58,11 +58,11 @@ def show_discover_help():
     console.print("- Use [cyan]--regions all[/cyan] when you need full global coverage\n")
 
     console.print("[bold green]NEXT STEPS[/bold green] (after discovery):")
-    console.print("- [cyan]tags scan[/cyan]           # Find resources missing required tags")
-    console.print("- [cyan]tags apply[/cyan]          # Start tagging resources")
-    console.print("- [cyan]tags report[/cyan]         # Generate compliance reports\n")
+    console.print("- [cyan]tag-manager lifecycle wizard[/cyan]  # Guided lifecycle and tagging workflow")
+    console.print("- [cyan]tag-manager policy --help[/cyan]     # AWS Organizations tag policy governance")
+    console.print("- [cyan]tag-manager web start[/cyan]         # Open the local dashboard through bluearch-core\n")
 
-    console.print("For detailed command help: [cyan]discover [COMMAND] --help[/cyan]")
+    console.print("For detailed command help: [cyan]tag-manager discover [COMMAND] --help[/cyan]")
 
 
 @discover_app.callback(invoke_without_command=True)
@@ -389,9 +389,9 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
     # Next steps
     console.print("\n[bold green]Next steps:[/bold green]")
     if permission_errors > 0:
-        console.print("  [cyan]setup validate[/cyan]      - Check and fix IAM permission issues")
-    console.print("  [cyan]tags scan[/cyan]           - Find resources missing required tags")
-    console.print("  [cyan]tags apply[/cyan]          - Start tagging resources")
+        console.print("  [cyan]tag-manager setup validate[/cyan]      - Check and fix IAM permission issues")
+    console.print("  [cyan]tag-manager lifecycle wizard[/cyan]    - Guided lifecycle and tagging workflow")
+    console.print("  [cyan]tag-manager web start[/cyan]           - Open the local dashboard through bluearch-core")
 
     # Record task execution for tracking
     from ..utils.task_tracker import task_tracker

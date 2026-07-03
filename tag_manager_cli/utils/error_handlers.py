@@ -134,7 +134,7 @@ def require_database(func: Callable) -> Callable:
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
-            health = request_core("GET", "/api/v1/core/health", timeout=2.0)
+            health = request_core("GET", "/api/v1/core/health", service_token=False, timeout=2.0)
             if health.get("status") != "ok" or not health.get("db_ready", False):
                 raise RuntimeError(health.get("status") or "database not ready")
             db_status = health.get("database") or health.get("db") or {}

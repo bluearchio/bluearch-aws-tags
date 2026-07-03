@@ -127,7 +127,7 @@ def check_prerequisites() -> Dict[str, bool]:
         # Core runtime check
         progress.update(task, description="Checking bluearch-core...")
         try:
-            request_core("GET", "/api/v1/core/health", timeout=2.0)
+            request_core("GET", "/api/v1/core/health", service_token=False, timeout=2.0)
             checks["database"] = True
             progress.update(task, description="bluearch-core - OK")
         except Exception as e:

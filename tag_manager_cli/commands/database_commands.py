@@ -68,7 +68,7 @@ def init_db(
 def db_status():
     """Check database status and health."""
     console.print("[INFO] Checking bluearch-core database status...")
-    health = request_core("GET", "/api/v1/core/health", timeout=5.0)
+    health = request_core("GET", "/api/v1/core/health", service_token=False, timeout=5.0)
     status = request_core("GET", "/api/v1/core/db/status", timeout=5.0)
 
     # Create status table

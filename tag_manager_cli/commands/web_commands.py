@@ -418,7 +418,7 @@ def _ensure_core_dependency() -> None:
 
 @web_app.command("start")
 def start(
-    host: str = typer.Option("0.0.0.0", "--host", "-H", help="Bind address"),
+    host: str = typer.Option("127.0.0.1", "--host", "-H", help="Bind address"),
     port: int = typer.Option(8096, "--port", "-p", help="Port number"),
     reload: bool = typer.Option(False, "--reload", help="Enable auto-reload (dev mode)"),
     log_level: str = typer.Option("info", "--log-level", help="Log level (debug, info, warning, error)"),
@@ -522,7 +522,7 @@ def start(
 
 
 def _dev_command(
-    host: str = typer.Option("0.0.0.0", "--host", "-H", help="Bind address"),
+    host: str = typer.Option("127.0.0.1", "--host", "-H", help="Bind address"),
     port: int = typer.Option(8096, "--port", "-p", help="Port number"),
     log_level: str = typer.Option("info", "--log-level", help="Log level"),
 ):
@@ -534,7 +534,7 @@ def _dev_command(
     - Frontend: auto-rebuilds on Vue/TS file changes (refresh browser to see)
 
     Examples:
-        web dev                            # Start on 0.0.0.0:8096
+        web dev                            # Start on 127.0.0.1:8096
         web dev --port 9000                # Custom port
     """
     frontend_dir = _find_frontend_dir()

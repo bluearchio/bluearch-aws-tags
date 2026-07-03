@@ -21,8 +21,6 @@ try:
     import alembic
     import diskcache
 
-    # Optional features (can be removed if not using these features)
-    import slack_sdk  # Keep if Slack integration is needed
     import psutil     # Keep if health monitoring is needed
 except ImportError as e:
     # It's OK if some packages are missing in development

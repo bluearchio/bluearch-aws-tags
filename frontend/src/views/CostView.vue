@@ -1,7 +1,6 @@
 <template>
   <div class="cost-view">
     <PermissionBanner feature="cost_report" />
-    <ProBadge feature="cost:cur_analytics" label="CUR Cost Analytics" />
     <!-- Controls -->
     <div class="controls-bar">
       <div class="period-selector">
@@ -899,7 +898,6 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import PermissionBanner from '@/components/PermissionBanner.vue'
-import ProBadge from '@/components/ProBadge.vue'
 import { use } from 'echarts/core'
 import { CanvasRenderer } from 'echarts/renderers'
 import { PieChart, BarChart, LineChart } from 'echarts/charts'

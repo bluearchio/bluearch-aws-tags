@@ -936,41 +936,12 @@ export interface FeatureStatus {
   note?: string
 }
 
-export interface UpgradePath {
-  next_tier: string
-  action: string
-  unlocks: string[]
-}
-
 export interface PermissionStatusResponse {
   account_id: string
   tier: string
   checked_at?: string
   expires_at?: string
   features: Record<string, FeatureStatus>
-  upgrade_path?: UpgradePath
-}
-
-export interface LicenseResponse {
-  tier: 'free' | 'pro' | 'enterprise'
-  customer: string | null
-  org_id: string | null
-  expires_at: string | null
-  max_users: number | null
-  features: Record<string, boolean>
-}
-
-export interface LicenseActivateRequest {
-  key: string
-}
-
-export interface UpgradeRequestBody {
-  email: string
-}
-
-export interface UpgradeRequestResponse {
-  message: string
-  request_id: string
 }
 
 // --- Resource Graph types ---

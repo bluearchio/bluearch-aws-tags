@@ -212,7 +212,7 @@ def _maybe_run_managed_web_start() -> None:
     from tag_manager_cli.commands.web_commands import start
 
     try:
-        start(**_parse_managed_web_start_args("0.0.0.0", 8096))
+        start(**_parse_managed_web_start_args("127.0.0.1", 8096))
     except typer.Exit as exc:
         raise SystemExit(exc.exit_code) from exc
     raise SystemExit(0)
@@ -295,9 +295,10 @@ def interactive(
 
 # Import command apps - we need these at startup for Typer to work correctly
 # NOTE: Simplified CLI structure - lifecycle is the flagship feature
-# Removed tangential commands: tags, discover, policy, accounts, alarms, cost
+# Removed tangential commands: tags, accounts, alarms
 # These commands still exist in the codebase for future use if needed
 if __name__ == "__main__":
+    from tag_manager_cli.commands.discovery_commands import discover_app
     from tag_manager_cli.commands.lifecycle_commands import lifecycle_app
     from tag_manager_cli.commands.policy_commands import app as policy_app
     from tag_manager_cli.commands.ai_commands import app as ai_app
@@ -307,6 +308,7 @@ if __name__ == "__main__":
     from tag_manager_cli.commands.cost_commands import cost_app
     from tag_manager_cli.commands.web_commands import web_app
 else:
+    from .commands.discovery_commands import discover_app
     from .commands.lifecycle_commands import lifecycle_app
     from .commands.policy_commands import app as policy_app
     from .commands.ai_commands import app as ai_app
@@ -319,6 +321,7 @@ else:
 # Register the command apps with Typer
 # Hybrid policy system: lifecycle + AWS Org policies
 app.add_typer(lifecycle_app, name="lifecycle")  # FLAGSHIP - Resource lifecycle management
+app.add_typer(discover_app, name="discover")    # Friendly first-run resource discovery alias
 app.add_typer(policy_app, name="policy")        # AWS Organizations Tag Policies
 app.add_typer(ai_app, name="ask")               # AI helper (can execute commands)
 app.add_typer(cost_app, name="cost")            # FinOps cost analysis (CUR-powered)
@@ -356,6 +359,7 @@ def show_main_help():
 
     print_safe("[bold cyan]CORE FEATURES[/bold cyan]:")
     print_safe("- [cyan]lifecycle[/cyan]     - Resource lifecycle management (TTL, expiration, cleanup) [bold yellow]<- MAIN FEATURE[/bold yellow]")
+    print_safe("- [cyan]discover[/cyan]      - First-run AWS resource discovery")
     print_safe("- [cyan]cost[/cyan]          - FinOps cost analysis (CUR-powered)")
     print_safe("- [cyan]policy[/cyan]        - AWS Organizations Tag Policies (enterprise governance)")
     print_safe("- [cyan]ask[/cyan]           - AI-powered AWS assistant (natural language queries)")
@@ -367,6 +371,7 @@ def show_main_help():
     print_safe("- [cyan]web[/cyan]           - Web dashboard server (REST API)\n")
 
     print_safe("[bold green]QUICK START[/bold green] (new users):")
+    print_safe("  [cyan]tag-manager discover[/cyan]             <- Discover AWS resources first")
     print_safe("  [cyan]tag-manager lifecycle wizard[/cyan]     <- Recommended! Complete guided workflow\n")
 
     print_safe("[bold green]MANUAL WORKFLOW[/bold green] (experienced users):")
@@ -398,7 +403,7 @@ def show_main_help():
     print_safe("[bold green]SHELL COMPLETION[/bold green]:")
     print_safe("  [dim]tag-manager --install-completion[/dim]      - Enable TAB completion for your shell\n")
 
-    print_safe("For detailed help: [cyan]tag-manager lifecycle --help[/cyan] or [cyan]tag-manager cost --help[/cyan]")
+    print_safe("For detailed help: [cyan]tag-manager discover --help[/cyan] or [cyan]tag-manager lifecycle --help[/cyan]")
 
 
 def _ensure_core_for_command(ctx: typer.Context, help_requested: bool, version_requested: bool) -> None:
@@ -441,6 +446,7 @@ def main(
 
     [bold cyan]CORE FEATURES[/bold cyan]:
     - [cyan]lifecycle[/cyan]     - Resource lifecycle management (TTL, expiration, cleanup)
+    - [cyan]discover[/cyan]      - First-run AWS resource discovery
     - [cyan]cost[/cyan]          - FinOps cost analysis (CUR-powered)
     - [cyan]policy[/cyan]        - AWS Organizations Tag Policies (enterprise governance)
     - [cyan]ask[/cyan]           - AI-powered AWS assistant (natural language queries)
@@ -451,7 +457,7 @@ def main(
     - [cyan]uninstall[/cyan]     - Remove CLI and all AWS resources
 
     [bold green]QUICK START[/bold green]:
-    Run [cyan]tag-manager lifecycle wizard[/cyan] for complete guided setup.
+    Run [cyan]tag-manager discover[/cyan] first, then [cyan]tag-manager lifecycle wizard[/cyan] for guided setup.
 
     [bold green]MANUAL WORKFLOW[/bold green]:
     1. [dim]lifecycle policies create[/dim]  - Define resource rules

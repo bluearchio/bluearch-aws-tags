@@ -127,7 +127,7 @@ def show_system_status():
     
     # Check Core runtime and storage
     try:
-        health = request_core("GET", "/api/v1/core/health", timeout=2.0)
+        health = request_core("GET", "/api/v1/core/health", service_token=False, timeout=2.0)
         if not health.get("db_ready"):
             raise RuntimeError("Core database is not ready")
         db_status = "OK Connected"
@@ -168,13 +168,6 @@ def show_system_status():
             if running_services:
                 docker_details += f" ({len(running_services)} services running)"
             
-            # Check Slack integration specifically if configured
-            if os.getenv('SQS_QUEUE_URL'):
-                is_ready, slack_msg = docker_integration.check_slack_integration_ready()
-                if is_ready:
-                    docker_details += " | Slack Worker: Healthy"
-                else:
-                    docker_details += f" | Slack Worker: {slack_msg.split('.')[0]}"  # Short message
         else:
             docker_status = "WARN Unavailable"
             docker_details = "Docker not available"
