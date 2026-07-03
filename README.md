@@ -85,6 +85,8 @@ gh attestation verify tag-manager-linux-x86_64.tar.gz --repo bluearchio/bluearch
 
 For macOS, verify `tag-manager-macos-arm64.zip` with `gh attestation verify`.
 
+Release workflows also open a pull request against `bluearchio/homebrew-tap` to update `bluearch-aws-tags`. Configure `HOMEBREW_TAP_TOKEN_2` before cutting a public tag.
+
 ## Security And Privacy Defaults
 
 - The dashboard binds to loopback by default.
