@@ -67,6 +67,7 @@ python -m nuitka \
   --include-package="$PACKAGE_NAME" \
   --include-package-data="$PACKAGE_NAME" \
   --include-package=shellingham \
+  --include-package-data=limits \
   --include-package-data=rich \
   --include-package-data=pydantic \
   --include-package-data=pydantic_core \
