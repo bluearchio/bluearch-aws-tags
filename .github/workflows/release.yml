@@ -30,6 +30,17 @@ jobs:
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
+      - name: Stamp release version
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          release_tag = os.environ["RELEASE_TAG"]
+          version_file = Path("tag_manager_cli/__init__.py")
+          version_text = version_file.read_text()
+          version_text = version_text.replace('__version__ = "LOCAL"', f'__version__ = "{release_tag}"')
+          version_file.write_text(version_text)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
@@ -77,6 +88,17 @@ jobs:
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
+      - name: Stamp release version
+        shell: python
+        run: |
+          import os
+          from pathlib import Path
+
+          release_tag = os.environ["RELEASE_TAG"]
+          version_file = Path("tag_manager_cli/__init__.py")
+          version_text = version_file.read_text()
+          version_text = version_text.replace('__version__ = "LOCAL"', f'__version__ = "{release_tag}"')
+          version_file.write_text(version_text)
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
