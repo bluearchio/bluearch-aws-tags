@@ -19,9 +19,9 @@ This repo is not a hosted account system, analytics collector, or commercial lic
 brew tap bluearchio/tap
 brew install bluearchio/tap/bluearch-aws-core
 brew install bluearchio/tap/bluearch-aws-tags
-bluearch-core start --daemon
-tag-manager discover
-tag-manager web start
+bluearch-aws-core start --daemon
+bluearch-aws-tags discover
+bluearch-aws-tags web start
 ```
 
 Linux:
@@ -29,12 +29,13 @@ Linux:
 ```bash
 curl -fsSL https://dist.bluearch.io/install/bluearch-aws-tags.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
-bluearch-core start --daemon
-tag-manager discover
-tag-manager web start
+bluearch-aws-core start --daemon
+bluearch-aws-tags discover
+bluearch-aws-tags web start
 ```
 
-The Linux installer installs `bluearch-core` automatically if it is missing.
+The Linux installer installs `bluearch-aws-core` automatically if it is missing.
+`tag-manager` is also installed as a shorter compatibility command.
 
 From source:
 
@@ -42,8 +43,8 @@ From source:
 python -m venv .venv
 . .venv/bin/activate
 pip install -e .
-bluearch-core start --daemon
-tag-manager discover
+bluearch-aws-core start --daemon
+bluearch-aws-tags discover
 ```
 
 ## Local Development
@@ -52,7 +53,7 @@ Backend:
 
 ```bash
 . .venv/bin/activate
-tag-manager web start --host 127.0.0.1 --port 8096
+bluearch-aws-tags web start --host 127.0.0.1 --port 8096
 ```
 
 Frontend:
