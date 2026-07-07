@@ -35,7 +35,6 @@ bluearch-aws-tags web start
 ```
 
 The Linux installer installs `bluearch-aws-core` automatically if it is missing.
-`tag-manager` is also installed as a shorter compatibility command.
 
 From source:
 
@@ -93,10 +92,10 @@ Tagged releases are published from GitHub Actions after Linux and signed/notariz
 ```bash
 sha256sum -c SHA256SUMS
 # macOS: shasum -a 256 -c SHA256SUMS
-gh attestation verify tag-manager-linux-x86_64.tar.gz --repo bluearchio/bluearch-aws-tags
+gh attestation verify bluearch-aws-tags-linux-x86_64.tar.gz --repo bluearchio/bluearch-aws-tags
 ```
 
-For macOS, verify `tag-manager-macos-arm64.zip` with `gh attestation verify`.
+For macOS, verify `bluearch-aws-tags-macos-arm64.zip` with `gh attestation verify`.
 
 Release workflows also open a pull request against `bluearchio/homebrew-tap` to update `bluearch-aws-tags`. Configure `HOMEBREW_TAP_TOKEN_2` before cutting a public tag.
 

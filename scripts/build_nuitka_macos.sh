@@ -2,12 +2,12 @@
 
 set -euo pipefail
 
-BINARY_NAME="${BINARY_NAME:-tag-manager}"
+BINARY_NAME="${BINARY_NAME:-bluearch-aws-tags}"
 PACKAGE_NAME="${PACKAGE_NAME:-tag_manager_cli}"
 ENTRY_IMPORT="${ENTRY_IMPORT:-tag_manager_cli.main}"
 APP_OBJECT="${APP_OBJECT:-cli}"
 if [ -z "${ONEFILE_TEMPDIR:-}" ]; then
-  ONEFILE_TEMPDIR="{HOME}/.tag-manager/bin"
+  ONEFILE_TEMPDIR="{HOME}/.bluearch-aws-tags/bin"
 fi
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

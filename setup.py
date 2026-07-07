@@ -92,7 +92,6 @@ setup(
     entry_points={
         "console_scripts": [
             "bluearch-aws-tags=tag_manager_cli.main:cli",
-            "tag-manager=tag_manager_cli.main:cli",
         ],
     },
     include_package_data=True,

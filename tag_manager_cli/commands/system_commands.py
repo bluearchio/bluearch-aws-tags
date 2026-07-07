@@ -290,7 +290,7 @@ def validate_setup():
         print_safe("Start with: [cyan]tag-manager interactive[/cyan] or [cyan]tag-manager tags scan[/cyan]")
     else:
         print_error("\nERROR Some validations failed. Please address the issues above.")
-        print_safe("For help: [cyan]tag-manager system config[/cyan] or [cyan]tag-manager --help[/cyan]")
+        print_safe("For help: [cyan]bluearch-aws-tags system config[/cyan] or [cyan]bluearch-aws-tags --help[/cyan]")
 
 
 @system_app.command("reset")

@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 env:
-  BINARY_NAME: tag-manager
+  BINARY_NAME: bluearch-aws-tags
 
 jobs:
   build-unsigned:
