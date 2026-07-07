@@ -27,7 +27,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -86,7 +86,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           persist-credentials: false
@@ -232,7 +232,7 @@ jobs:
       artifact-metadata: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref }}
           fetch-depth: 0
@@ -277,7 +277,7 @@ jobs:
           gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag --title "$RELEASE_TAG" --generate-notes
           gh release edit "$RELEASE_TAG" --draft=false
       - name: Checkout Homebrew tap
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.HOMEBREW_TAP_REPO }}
           token: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
