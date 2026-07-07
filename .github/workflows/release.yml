@@ -42,7 +42,7 @@ jobs:
           version_text = version_file.read_text()
           version_text = version_text.replace('__version__ = "LOCAL"', f'__version__ = "{release_tag}"')
           version_file.write_text(version_text)
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
@@ -101,7 +101,7 @@ jobs:
           version_text = version_file.read_text()
           version_text = version_text.replace('__version__ = "LOCAL"', f'__version__ = "{release_tag}"')
           version_file.write_text(version_text)
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           cache: pip
