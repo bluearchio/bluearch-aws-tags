@@ -25,11 +25,11 @@ def test_daemon_command_uses_module_when_running_from_python(monkeypatch, tmp_pa
 
 
 def test_daemon_command_uses_cli_launcher_when_running_from_binary(monkeypatch, tmp_path):
-    launcher = tmp_path / "tag-manager"
+    launcher = tmp_path / "bluearch-aws-tags"
     launcher.write_text("#!/bin/sh\n")
     launcher.chmod(0o755)
 
-    binary = tmp_path / "tag-manager.bin"
+    binary = tmp_path / "bluearch-aws-tags"
     binary.write_text("#!/bin/sh\n")
     binary.chmod(0o755)
 
@@ -48,27 +48,27 @@ def test_daemon_command_uses_cli_launcher_when_running_from_binary(monkeypatch, 
 
 
 def test_find_cli_executable_can_use_path_lookup(monkeypatch, tmp_path):
-    launcher = tmp_path / "tag-manager"
+    launcher = tmp_path / "bluearch-aws-tags"
     launcher.write_text("#!/bin/sh\n")
     launcher.chmod(0o755)
 
-    binary = tmp_path / "tag-manager.bin"
+    binary = tmp_path / "bluearch-aws-tags"
     binary.write_text("#!/bin/sh\n")
     binary.chmod(0o755)
 
-    monkeypatch.setattr(sys, "argv", ["tag-manager"])
+    monkeypatch.setattr(sys, "argv", ["bluearch-aws-tags"])
     monkeypatch.setattr(sys, "executable", os.fspath(binary))
     monkeypatch.setattr(
         web.shutil,
         "which",
-        lambda command: os.fspath(launcher) if command == "tag-manager" else None,
+        lambda command: os.fspath(launcher) if command == "bluearch-aws-tags" else None,
     )
 
     assert web._find_cli_executable() == os.fspath(launcher)
 
 
 def test_daemon_child_env_resets_pyinstaller_extraction(monkeypatch, tmp_path):
-    monkeypatch.setattr(sys, "executable", os.fspath(tmp_path / "tag-manager.bin"))
+    monkeypatch.setattr(sys, "executable", os.fspath(tmp_path / "bluearch-aws-tags"))
     monkeypatch.setattr(sys, "_MEIPASS", "/tmp/tag-manager-bundle", raising=False)
 
     env = web._daemon_child_env()
@@ -78,7 +78,7 @@ def test_daemon_child_env_resets_pyinstaller_extraction(monkeypatch, tmp_path):
 
 def test_daemon_cwd_uses_runtime_dir_for_packaged_child(monkeypatch, tmp_path):
     monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path / ".tag-manager")
-    monkeypatch.setattr(sys, "executable", os.fspath(tmp_path / "tag-manager.bin"))
+    monkeypatch.setattr(sys, "executable", os.fspath(tmp_path / "bluearch-aws-tags"))
     monkeypatch.setattr(sys, "_MEIPASS", "/tmp/tag-manager-bundle", raising=False)
 
     assert web._daemon_cwd() == os.fspath(tmp_path / ".tag-manager")

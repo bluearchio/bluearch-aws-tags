@@ -21,6 +21,8 @@ import typer.core
 from rich.console import Console
 
 console = Console()
+PUBLIC_TAGS_EXECUTABLE = "bluearch-aws-tags"
+LEGACY_TAGS_EXECUTABLES = {"tag-manager"}
 
 
 class _DefaultStartGroup(typer.core.TyperGroup):
@@ -46,23 +48,22 @@ def show_web_help():
     console.print("\n[bold cyan]Web Dashboard[/bold cyan] - Browser-based UI for AWS Tag Manager\n")
 
     console.print("[bold green]SERVER[/bold green]:")
-    console.print("- [cyan]start[/cyan]         - Managed by bluearch-core")
     console.print("- [cyan]stop[/cyan]          - Stop the running server")
     console.print("- [cyan]status[/cyan]        - Show server status")
     console.print("- [cyan]dev[/cyan]           - Start dev server with auto-reload\n")
 
     console.print("[bold green]QUICK START[/bold green]:")
-    console.print("1. [dim]bluearch-core start --daemon[/dim]      # Start core and available web dashboards")
+    console.print("1. [dim]bluearch-aws-core start --daemon[/dim]  # Start Core and available web dashboards")
     console.print("2. Open [cyan]http://localhost:8096[/cyan] in your browser\n")
 
     console.print("[bold yellow]EXAMPLES[/bold yellow]:")
-    console.print("  [dim]bluearch-core start --daemon[/dim]       # Run managed web dashboards")
+    console.print("  [dim]bluearch-aws-core start --daemon[/dim]   # Run managed web dashboards")
     console.print("  [dim]web stop[/dim]                          # Stop this dashboard")
     console.print("  [dim]web status[/dim]                        # Show this dashboard status")
     console.print("  [dim]web dev[/dim]                           # Dev mode with hot reload\n")
 
     console.print("[bold magenta]LOCAL ACCESS[/bold magenta]:")
-    console.print("  The dashboard is local-only and uses the bluearch-core service token.\n")
+    console.print("  The dashboard is local-only and uses the bluearch-aws-core service token.\n")
 
 
 @web_app.callback(invoke_without_command=True)
@@ -85,7 +86,6 @@ APP_PROCESS_MARKERS = (
     "bluearch web start",
     "web.app:create_app",
     "tag_manager_cli",
-    "tag-manager web start",
 )
 
 MAX_LOG_FILES = 5
@@ -156,7 +156,7 @@ def _is_our_process(pid: int) -> bool:
     cmdline = _process_cmdline(pid).lower()
     if not cmdline:
         return False
-    return "tag_manager_cli" in cmdline or "tag-manager" in cmdline
+    return "tag_manager_cli" in cmdline and not _uses_legacy_tags_launcher(cmdline)
 
 
 def _is_server_running() -> tuple[bool, int | None]:
@@ -223,7 +223,7 @@ def _resolve_start_port(host: str, preferred: int) -> int:
         print_safe(
             f"[red][ERROR] Port {preferred} is still in use by a non-BlueArch/Tag Manager process.[/red]"
         )
-        print_safe("[dim]Stop that process and run `bluearch-core start --daemon` again.[/dim]")
+        print_safe("[dim]Stop that process and run `bluearch-aws-core start --daemon` again.[/dim]")
         raise typer.Exit(1)
     return _find_available_port(host, preferred)
 
@@ -289,7 +289,13 @@ def _listener_pids(port: int) -> set[int]:
 
 def _is_bluearch_or_tag_manager_process(pid: int) -> bool:
     cmdline = _process_cmdline(pid).lower()
+    if _uses_legacy_tags_launcher(cmdline):
+        return False
     return any(marker in cmdline for marker in APP_PROCESS_MARKERS)
+
+
+def _uses_legacy_tags_launcher(command_line: str) -> bool:
+    return any(Path(token).name in LEGACY_TAGS_EXECUTABLES for token in command_line.split())
 
 
 def _process_cmdline(pid: int) -> str:
@@ -353,8 +359,8 @@ def _build_daemon_cmd(host: str, port: int, log_level: str) -> list[str]:
 
     cli_executable = _find_cli_executable()
     if cli_executable is None:
-        print_safe("[red][ERROR] Unable to find an executable tag-manager launcher for daemon mode.[/red]")
-        print_safe("[dim]Run `bluearch-core start --daemon` to start the managed dashboard.[/dim]")
+        print_safe("[red][ERROR] Unable to find an executable bluearch-aws-tags launcher for daemon mode.[/red]")
+        print_safe("[dim]Run `bluearch-aws-core start --daemon` to start the managed dashboard.[/dim]")
         raise typer.Exit(1)
 
     return [
@@ -384,7 +390,7 @@ def _is_python_executable(executable: str) -> bool:
 
 def _find_cli_executable() -> str | None:
     """Find the user-facing CLI launcher instead of assuming sys.executable works."""
-    candidates = [sys.argv[0], shutil.which("tag-manager")]
+    candidates = [sys.argv[0], shutil.which(PUBLIC_TAGS_EXECUTABLE)]
 
     if not _is_python_executable(sys.executable):
         candidates.append(sys.executable)
@@ -393,9 +399,26 @@ def _find_cli_executable() -> str | None:
         if not candidate:
             continue
         path = shutil.which(candidate) if not os.path.isabs(candidate) else candidate
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+        if _is_public_tags_executable(path):
             return path
     return None
+
+
+def _is_public_tags_executable(candidate: str | None) -> bool:
+    """Validate raw and symlink-resolved launchers before executing one."""
+    if not candidate:
+        return False
+    path = Path(candidate).expanduser()
+    if path.name in LEGACY_TAGS_EXECUTABLES:
+        return False
+    if path.name != PUBLIC_TAGS_EXECUTABLE:
+        return False
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return False
+    try:
+        return path.resolve(strict=True).name == PUBLIC_TAGS_EXECUTABLE
+    except OSError:
+        return False
 
 
 def _ensure_core_dependency() -> None:
@@ -404,10 +427,10 @@ def _ensure_core_dependency() -> None:
 
         check_core_dependency("tag-manager")
     except Exception as exc:
-        print_safe("[red][ERROR] bluearch-core is required before starting the Tag Manager web dashboard.[/red]")
+        print_safe("[red][ERROR] bluearch-aws-core is required before starting the Tags web dashboard.[/red]")
         print_safe(f"[dim]{exc}[/dim]")
-        print_safe(f"[cyan]Required version:[/cyan] bluearch-core >= {MINIMUM_CORE_VERSION}")
-        print_safe("[cyan]Start it with:[/cyan] bluearch-core start --daemon")
+        print_safe(f"[cyan]Required version:[/cyan] bluearch-aws-core >= {MINIMUM_CORE_VERSION}")
+        print_safe("[cyan]Start it with:[/cyan] bluearch-aws-core start --daemon")
         print_safe("[cyan]Install it with:[/cyan] brew install bluearchio/tap/bluearch-aws-core")
         raise typer.Exit(1)
 
@@ -432,7 +455,7 @@ def start(
     Interactive API docs available at http://<host>:<port>/docs
 
     Example:
-        bluearch-core start --daemon
+        bluearch-aws-core start --daemon
     """
     _ensure_core_managed_start()
     _ensure_core_dependency()
@@ -458,7 +481,7 @@ def start(
             print_safe("[yellow]Existing Tag Manager web server detected; restarting fixed SSO ports.[/yellow]")
         else:
             print_safe(f"[red][ERROR] Web server already running (PID: {existing_pid})[/red]")
-            print_safe("Use [cyan]tag-manager web stop[/cyan] to stop it first.")
+            print_safe("Use [cyan]bluearch-aws-tags web stop[/cyan] to stop it first.")
             raise typer.Exit(1)
 
     port = _resolve_start_port(host, port)
@@ -550,7 +573,7 @@ def _dev_command(
             print_safe("[yellow]Existing Tag Manager web server detected; restarting fixed SSO ports.[/yellow]")
         else:
             print_safe(f"[red][ERROR] Web server already running (PID: {existing_pid})[/red]")
-            print_safe("Use [cyan]tag-manager web stop[/cyan] to stop it first.")
+            print_safe("Use [cyan]bluearch-aws-tags web stop[/cyan] to stop it first.")
             raise typer.Exit(1)
 
     port = _resolve_start_port(host, port)
@@ -722,8 +745,8 @@ def status():
 def _ensure_core_managed_start() -> None:
     if os.environ.get("BLUEARCH_CORE_MANAGED_WEB_START") == "1":
         return
-    print_safe("[yellow][WARN] Tag Manager web startup is managed by bluearch-core.[/yellow]")
-    print_safe("[cyan]Run:[/cyan] bluearch-core start --daemon")
+    print_safe("[yellow][WARN] Tags web startup is managed by bluearch-aws-core.[/yellow]")
+    print_safe("[cyan]Run:[/cyan] bluearch-aws-core start --daemon")
     raise typer.Exit(1)
 
 
@@ -756,7 +779,7 @@ def _start_daemon(host: str, port: int, log_level: str) -> None:
     print_safe(f"  URL:     [cyan]http://{_display_host(host)}:{port}[/cyan]")
     print_safe(f"  API docs: [cyan]http://{_display_host(host)}:{port}/docs[/cyan]")
     print_safe(f"  Log:     {LOG_FILE}")
-    print_safe(f"  Stop:    [cyan]tag-manager web stop[/cyan]")
+    print_safe(f"  Stop:    [cyan]bluearch-aws-tags web stop[/cyan]")
     print_safe("")
 
 

@@ -44,8 +44,8 @@ def show_discover_help():
     console.print("- [dim]--services ec2,s3[/dim]   # Combine multiple services\n")
 
     console.print("[bold green]QUICK START EXAMPLES[/bold green]:")
-    console.print("1. [dim]discover[/dim]                           # Scan all enabled accounts")
-    console.print("2. [dim]discover --single-account[/dim]         # Current account only")
+    console.print("1. [dim]discover all[/dim]                       # Scan all enabled accounts")
+    console.print("2. [dim]discover all --single-account[/dim]     # Current account only")
     console.print("3. [dim]discover ec2[/dim]                       # EC2 across all accounts")
     console.print("4. [dim]discover lambda --regions us-east-1[/dim] # Lambda in one region, all accounts")
     console.print("5. [dim]discover --regions all[/dim]             # Scan all enabled regions")
@@ -58,11 +58,11 @@ def show_discover_help():
     console.print("- Use [cyan]--regions all[/cyan] when you need full global coverage\n")
 
     console.print("[bold green]NEXT STEPS[/bold green] (after discovery):")
-    console.print("- [cyan]tag-manager lifecycle wizard[/cyan]  # Guided lifecycle and tagging workflow")
-    console.print("- [cyan]tag-manager policy --help[/cyan]     # AWS Organizations tag policy governance")
-    console.print("- [cyan]tag-manager web start[/cyan]         # Open the local dashboard through bluearch-core\n")
+    console.print("- [cyan]bluearch-aws-tags lifecycle wizard[/cyan]  # Guided lifecycle and tagging workflow")
+    console.print("- [cyan]bluearch-aws-tags policy --help[/cyan]     # AWS Organizations tag policy governance")
+    console.print("- [cyan]bluearch-aws-core start --daemon[/cyan]   # Open local dashboards\n")
 
-    console.print("For detailed command help: [cyan]tag-manager discover [COMMAND] --help[/cyan]")
+    console.print("For detailed command help: [cyan]bluearch-aws-tags discover [COMMAND] --help[/cyan]")
 
 
 @discover_app.callback(invoke_without_command=True)
@@ -120,12 +120,14 @@ def discover_callback(
         - Default scan: 4 US regions × selected services for faster feedback
         - Regions complete in any order, tree updates live
     """
-    # Show custom help if requested or no args
-    if help or (not ctx.invoked_subcommand and services == "all" and regions is None and not force):
-        show_discover_help()
-        if help:
-            raise typer.Exit()
+    # Bare `discover` is help-only and deliberately succeeds without a scan.
+    if not ctx.invoked_subcommand and services == "all" and regions is None and not force and not multi_account and not single_account and not accounts:
+        typer.echo(ctx.get_help())
+        typer.echo("Run bluearch-aws-tags discover all to scan your AWS resources.")
         return
+    if help:
+        show_discover_help()
+        raise typer.Exit()
 
     # If a subcommand is invoked, don't run default
     if ctx.invoked_subcommand is not None:
@@ -229,7 +231,7 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
                 console.print("[yellow]Cross-account StackSet not found.[/yellow]")
                 console.print("[dim]Cross-account infrastructure is required for multi-account discovery.[/dim]\n")
                 console.print("To deploy the StackSet, run:")
-                console.print("  [cyan]tag-manager setup multi-account[/cyan]\n")
+                console.print("  [cyan]bluearch-aws-tags setup multi-account[/cyan]\n")
 
                 if not Confirm.ask("Continue with single-account discovery instead?", default=True):
                     console.print("[yellow]Discovery cancelled.[/yellow]")
@@ -242,7 +244,7 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
             elif status == 'FAILED':
                 console.print(f"[yellow]Cross-account StackSet has issues: {status_reason}[/yellow]")
                 console.print("Some accounts may fail. To fix, run:")
-                console.print("  [cyan]tag-manager setup multi-account --update[/cyan]\n")
+                console.print("  [cyan]bluearch-aws-tags setup multi-account --update[/cyan]\n")
 
         except typer.Exit:
             # User cancelled - propagate exit
@@ -379,7 +381,7 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
                 console.print(f"  ... and {remaining} more permission error(s)")
         console.print("\n[bold cyan]Recommended Action:[/bold cyan]")
         console.print("Run the following command to check all required IAM permissions:")
-        console.print("  [bold cyan]tag-manager setup validate[/bold cyan]")
+        console.print("  [bold cyan]bluearch-aws-tags setup validate[/bold cyan]")
         console.print("\nThis will:")
         console.print("  - Show exactly which IAM permissions are missing")
         console.print("  - Provide a JSON policy to fix the permission issues")
@@ -389,9 +391,9 @@ def discover_resources_internal(services: str, regions: Optional[str], force: bo
     # Next steps
     console.print("\n[bold green]Next steps:[/bold green]")
     if permission_errors > 0:
-        console.print("  [cyan]tag-manager setup validate[/cyan]      - Check and fix IAM permission issues")
-    console.print("  [cyan]tag-manager lifecycle wizard[/cyan]    - Guided lifecycle and tagging workflow")
-    console.print("  [cyan]tag-manager web start[/cyan]           - Open the local dashboard through bluearch-core")
+        console.print("  [cyan]bluearch-aws-tags setup validate[/cyan] - Check and fix IAM permission issues")
+    console.print("  [cyan]bluearch-aws-tags lifecycle wizard[/cyan] - Guided lifecycle and tagging workflow")
+    console.print("  [cyan]bluearch-aws-core start --daemon[/cyan] - Open local dashboards")
 
     # Record task execution for tracking
     from ..utils.task_tracker import task_tracker

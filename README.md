@@ -17,12 +17,14 @@ This repo is not a hosted account system, analytics collector, or commercial lic
 
 ```bash
 brew tap bluearchio/tap
-brew install bluearchio/tap/bluearch-aws-core
+brew trust --formula bluearchio/tap/bluearch-aws-core
+brew trust --formula bluearchio/tap/bluearch-aws-tags
 brew install bluearchio/tap/bluearch-aws-tags
 bluearch-aws-core start --daemon
-bluearch-aws-tags discover
-bluearch-aws-tags web start
+bluearch-aws-tags discover all
 ```
+
+Formula-specific trust is intentionally narrower than trusting the whole tap.
 
 Linux:
 
@@ -30,8 +32,7 @@ Linux:
 curl -fsSL https://dist.bluearch.io/install/bluearch-aws-tags.sh | bash
 export PATH="$HOME/.local/bin:$PATH"
 bluearch-aws-core start --daemon
-bluearch-aws-tags discover
-bluearch-aws-tags web start
+bluearch-aws-tags discover all
 ```
 
 The Linux installer installs `bluearch-aws-core` automatically if it is missing.
@@ -43,7 +44,7 @@ python -m venv .venv
 . .venv/bin/activate
 pip install -e .
 bluearch-aws-core start --daemon
-bluearch-aws-tags discover
+bluearch-aws-tags discover all
 ```
 
 ## Local Development
@@ -52,7 +53,8 @@ Backend:
 
 ```bash
 . .venv/bin/activate
-bluearch-aws-tags web start --host 127.0.0.1 --port 8096
+bluearch-aws-core start --daemon
+make backend-dev
 ```
 
 Frontend:
