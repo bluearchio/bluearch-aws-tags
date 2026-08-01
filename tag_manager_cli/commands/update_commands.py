@@ -13,10 +13,11 @@ try:
     from ..utils.display_utils import print_safe, print_error
     from ..utils.version_checker import get_updates
     from ..utils.core_client import (
+        CoreRuntimeError,
         MINIMUM_CORE_VERSION,
-        core_install_url,
         core_version_satisfies,
         get_installed_core_version,
+        resolve_core_install_command,
     )
     from .. import __version__
 except ImportError:
@@ -24,10 +25,11 @@ except ImportError:
     from tag_manager_cli.utils.display_utils import print_safe, print_error
     from tag_manager_cli.utils.version_checker import get_updates
     from tag_manager_cli.utils.core_client import (
+        CoreRuntimeError,
         MINIMUM_CORE_VERSION,
-        core_install_url,
         core_version_satisfies,
         get_installed_core_version,
+        resolve_core_install_command,
     )
     from tag_manager_cli import __version__
 
@@ -143,11 +145,14 @@ def perform_homebrew_update(required_core_version: str) -> bool:
 
 def perform_core_install(required_core_version: str, development_channel: bool) -> bool:
     """Install or update bluearch-core through the public install command."""
-    install_url = core_install_url(development_channel)
     print_safe(f"\n[blue]Ensuring bluearch-aws-core >= {required_core_version}...[/blue]")
-    cmd = install_url
-    print_safe(f"[dim]Executing: {cmd}[/dim]")
-    result = subprocess.run(cmd.split(), capture_output=False, text=True)
+    try:
+        command = resolve_core_install_command(development_channel)
+    except CoreRuntimeError as exc:
+        print_error(str(exc))
+        return False
+    print_safe(f"[dim]Executing: {' '.join(command)}[/dim]")
+    result = subprocess.run(command, capture_output=False, text=True)
     return result.returncode == 0
 
 

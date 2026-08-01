@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -155,14 +156,15 @@ def _resolve_core_executable(
     if not path or not path.is_file() or not os.access(path, os.X_OK):
         return None
     try:
-        target_name = path.resolve(strict=True).name
+        target = path.resolve(strict=True)
     except OSError:
         return None
+    target_name = target.name.casefold()
     if target_name in LEGACY_CORE_EXECUTABLES:
         return None
     if not allow_custom_development_binary and target_name != PUBLIC_CORE_EXECUTABLE:
         return None
-    return os.fspath(path)
+    return os.fspath(target)
 
 
 def core_version_satisfies(version: str | None, minimum_version: str | None = None) -> bool:
@@ -177,6 +179,44 @@ def core_install_url(development: bool = False) -> str:
     if configured:
         return configured
     return DEV_CORE_INSTALL_URL if development else PROD_CORE_INSTALL_URL
+
+
+def resolve_core_install_command(development: bool = False) -> list[str]:
+    """Return a validated installer argv without permitting legacy Core execution."""
+    configured = core_install_url(development)
+    try:
+        command = shlex.split(configured)
+    except ValueError as exc:
+        raise CoreRuntimeError(f"Invalid BlueArch Core install command: {exc}") from exc
+    if not command:
+        raise CoreRuntimeError("BlueArch Core install command is empty.")
+    if any(_is_legacy_core_reference(part) for part in command):
+        raise CoreRuntimeError("Refusing to execute an installer command that references legacy bluearch-core.")
+
+    candidate = Path(command[0]).expanduser()
+    resolved = candidate if candidate.is_absolute() or candidate.parent != Path(".") else Path(shutil.which(command[0]) or "")
+    if not resolved or not resolved.is_file() or not os.access(resolved, os.X_OK):
+        raise CoreRuntimeError(f"BlueArch Core installer executable was not found: {command[0]}")
+    try:
+        target = resolved.resolve(strict=True)
+    except OSError as exc:
+        raise CoreRuntimeError(f"BlueArch Core installer could not be resolved: {command[0]}") from exc
+    if target.name.casefold() in LEGACY_CORE_EXECUTABLES:
+        raise CoreRuntimeError("Refusing to execute an installer that resolves to legacy bluearch-core.")
+
+    return [os.fspath(target), *command[1:]]
+
+
+def _is_legacy_core_reference(value: str) -> bool:
+    """Identify direct and wrapper-embedded references to legacy Core."""
+    candidate = value.split("=", 1)[-1] if value.startswith("-") and "=" in value else value
+    return bool(
+        re.search(
+            r"(?<![A-Za-z0-9_-])bluearch-core(?![A-Za-z0-9_-])",
+            candidate,
+            flags=re.IGNORECASE,
+        )
+    )
 
 
 def _extract_version(text: str) -> str | None:

@@ -140,14 +140,14 @@ For TAG COMPLIANCE questions, use these tools:
 
 For CLOUDWATCH ALARMS:
 - suggest_cloudwatch_alarms: Get alarm suggestions for a resource
-- list_managed_alarms: List alarms created by tag-manager
+- list_managed_alarms: List alarms created by BlueArch AWS Tags
 - get_alarm_templates: View available alarm templates
 - create_cloudwatch_alarm: CREATE alarms (requires user confirmation!)
 
 When creating alarms: ALWAYS preview first (preview_only=true), show to user, get confirmation, then create.
 
 CLI SELF-AWARENESS:
-You can also help users with the tag-manager CLI itself:
+You can also help users with the bluearch-aws-tags CLI itself:
 - Use run_tag_manager_command to execute CLI operations (discover, tags scan, cost commands, etc.)
 - Use get_cli_help for documentation, usage examples, and troubleshooting
 
@@ -789,9 +789,9 @@ Example progression patterns:
                 "  • \"Show me last month's AWS costs\"\n"
                 "  • \"Which S3 buckets are untagged?\"\n\n"
                 "  [green]Start interactive chat:[/green]\n"
-                "  $ tag-manager ask chat\n\n"
+                "  $ bluearch-aws-tags ask chat\n\n"
                 "  [green]See available models:[/green]\n"
-                "  $ tag-manager ask models\n\n"
+                "  $ bluearch-aws-tags ask models\n\n"
                 "[dim]Model is ready to use immediately![/dim]",
                 title="[bold green]Ready to Go![/bold green]",
                 border_style="green",
@@ -900,9 +900,9 @@ Example progression patterns:
         console.print("   [dim]Description: AWS infrastructure management and analysis CLI tool[/dim]\n")
         console.print("5. Wait 2-15 minutes for activation\n")
         console.print("[green]For detailed instructions, run:[/green]")
-        console.print("  [bold]tag-manager ask setup-bedrock[/bold]\n")
+        console.print("  [bold]bluearch-aws-tags ask setup-bedrock[/bold]\n")
         console.print("[green]To verify access after enabling:[/green]")
-        console.print("  [bold]tag-manager ask check-access[/bold]\n")
+        console.print("  [bold]bluearch-aws-tags ask check-access[/bold]\n")
 
     def reset_conversation(self):
         """Clear conversation history."""

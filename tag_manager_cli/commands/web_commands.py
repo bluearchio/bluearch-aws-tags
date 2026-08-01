@@ -152,7 +152,7 @@ def _process_exists(pid: int) -> bool:
 
 
 def _is_our_process(pid: int) -> bool:
-    """Check if the PID belongs to a tag-manager web server process."""
+    """Check if the PID belongs to a bluearch-aws-tags web server process."""
     cmdline = _process_cmdline(pid).lower()
     if not cmdline:
         return False
@@ -439,7 +439,7 @@ def _ensure_core_dependency() -> None:
 # Commands
 # ---------------------------------------------------------------------------
 
-@web_app.command("start")
+@web_app.command("start", hidden=True)
 def start(
     host: str = typer.Option("127.0.0.1", "--host", "-H", help="Bind address"),
     port: int = typer.Option(8096, "--port", "-p", help="Port number"),

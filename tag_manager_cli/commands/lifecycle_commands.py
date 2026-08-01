@@ -63,7 +63,7 @@ def _check_resources_exist() -> bool:
         count = session.query(Resource).count()
         if count == 0:
             console.print("[yellow]No resources found in database.[/yellow]")
-            console.print("Run [cyan]tag-manager lifecycle scan[/cyan] first to scan AWS resources.")
+            console.print("Run [cyan]bluearch-aws-tags lifecycle scan[/cyan] first to scan AWS resources.")
             return False
         return True
 
@@ -183,10 +183,10 @@ def wizard_command():
     5. (Optional) Set up Slack notifications
     6. Show next steps
 
-    This is the recommended way to get started with tag-manager lifecycle management.
+    This is the recommended way to get started with BlueArch AWS Tags lifecycle management.
 
     Example:
-        tag-manager lifecycle wizard
+        bluearch-aws-tags lifecycle wizard
     """
     from tag_manager_cli.database.models import Resource, ResourceLifecyclePolicy
     from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -222,7 +222,7 @@ def wizard_command():
             default=False
         )
         if setup_multi:
-            console.print("\nRun: [cyan]tag-manager setup multi-accounts[/cyan]")
+            console.print("\nRun: [cyan]bluearch-aws-tags setup multi-account[/cyan]")
             console.print("Then restart this wizard.\n")
             return
 
@@ -369,7 +369,7 @@ def wizard_command():
             console.print("[green][OK][/green] Discovery complete!")
         except Exception as e:
             console.print(f"[red]Error:[/red] Discovery failed: {e}")
-            console.print("You can run manually: [cyan]tag-manager lifecycle scan[/cyan]")
+            console.print("You can run manually: [cyan]bluearch-aws-tags lifecycle scan[/cyan]")
 
     console.print()
 
@@ -491,7 +491,7 @@ def wizard_command():
                     console.print(f"[red]Error:[/red] {msg}")
         else:
             console.print("[dim]Skipped. You can set up later with:[/dim]")
-            console.print("  [cyan]tag-manager lifecycle notify-setup[/cyan]")
+            console.print("  [cyan]bluearch-aws-tags lifecycle notify-setup[/cyan]")
 
     console.print()
 
@@ -518,14 +518,14 @@ def wizard_command():
     console.print(f"  Slack notifications: {'Configured' if slack_notification_service.is_configured() else 'Not configured'}")
 
     console.print("\n[bold]Daily Workflow:[/bold]")
-    console.print("  [cyan]tag-manager lifecycle scan[/cyan]       # See resource status")
-    console.print("  [cyan]tag-manager lifecycle review[/cyan]     # Review expiring resources")
+    console.print("  [cyan]bluearch-aws-tags lifecycle scan[/cyan]       # See resource status")
+    console.print("  [cyan]bluearch-aws-tags lifecycle review[/cyan]     # Review expiring resources")
 
     console.print("\n[bold]Useful Commands:[/bold]")
-    console.print("  [cyan]tag-manager lifecycle scan --expiring 7[/cyan]   # Resources expiring in 7 days")
-    console.print("  [cyan]tag-manager lifecycle extend --days 30[/cyan]    # Extend TTL")
-    console.print("  [cyan]tag-manager lifecycle protect --list[/cyan]      # View protected resources")
-    console.print("  [cyan]tag-manager lifecycle policies[/cyan]            # Manage policies")
+    console.print("  [cyan]bluearch-aws-tags lifecycle scan --expiring 7[/cyan]   # Resources expiring in 7 days")
+    console.print("  [cyan]bluearch-aws-tags lifecycle extend --days 30[/cyan]    # Extend TTL")
+    console.print("  [cyan]bluearch-aws-tags lifecycle protect --list[/cyan]      # View protected resources")
+    console.print("  [cyan]bluearch-aws-tags lifecycle policies[/cyan]            # Manage policies")
 
     console.print("\n" + "=" * 60)
     console.print("[bold green]  Wizard Complete![/bold green]")
@@ -653,7 +653,7 @@ def scan_command(
             console.print(f"[yellow]Note:[/yellow] {org_message}")
             if noncompliant:
                 console.print("[yellow]Cannot filter by noncompliant - AWS Org access required.[/yellow]")
-                console.print("Run: [cyan]tag-manager policy check-access[/cyan] for details.")
+                console.print("Run: [cyan]bluearch-aws-tags policy check-access[/cyan] for details.")
                 return
 
     now = datetime.now(timezone.utc)

@@ -210,7 +210,7 @@ class CommandSuggestions:
             # First-time user flow
             "first_time": [
                 {"cmd": "setup wizard", "desc": "Complete guided setup (recommended)"},
-                {"cmd": "system validate", "desc": "Check your AWS configuration"},
+                {"cmd": "setup validate", "desc": "Check your AWS configuration"},
                 {"cmd": "interactive", "desc": "Use menu-driven interface"},
                 {"cmd": "--help", "desc": "View all available commands"}
             ],
@@ -334,7 +334,7 @@ class CommandSuggestions:
             content_lines.append("")
 
             for i, suggestion in enumerate(suggestions[:4], 1):  # Show top 4 suggestions
-                cmd_text = f"[cyan]tag-manager {suggestion['cmd']}[/cyan]"
+                cmd_text = f"[cyan]bluearch-aws-tags {suggestion['cmd']}[/cyan]"
                 desc_text = f"[dim]{suggestion['desc']}[/dim]"
                 content_lines.append(f"  {i}. {cmd_text}")
                 content_lines.append(f"     {desc_text}")
@@ -519,7 +519,7 @@ class CommandSuggestions:
                 {"cmd": "setup validate", "desc": "Check all services"}
             ],
             "permission": [
-                {"cmd": "sudo tag-manager <command>", "desc": "Run with elevated privileges"},
+                {"cmd": "sudo bluearch-aws-tags <command>", "desc": "Run with elevated privileges"},
                 {"cmd": "system validate", "desc": "Check permissions"},
                 {"cmd": "setup wizard", "desc": "Reconfigure with correct permissions"}
             ]
@@ -539,7 +539,7 @@ class CommandSuggestions:
         ]
 
         for i, suggestion in enumerate(suggestions, 1):
-            cmd_text = f"[cyan]tag-manager {suggestion['cmd']}[/cyan]"
+            cmd_text = f"[cyan]bluearch-aws-tags {suggestion['cmd']}[/cyan]"
             desc_text = f"[dim]{suggestion['desc']}[/dim]"
             content_lines.append(f"  {i}. {cmd_text}: {desc_text}")
 

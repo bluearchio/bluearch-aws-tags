@@ -7,6 +7,19 @@ from typing import Optional
 import sys
 import os
 
+
+def _raw_bare_discover_invocation(arguments: list[str]) -> bool:
+    """Recognize bare discovery before importing stateful command modules."""
+    remaining = list(arguments)
+    while remaining and remaining[0] == "--no-prompt":
+        remaining.pop(0)
+    return remaining == ["discover"]
+
+
+_HELP_ONLY_BARE_DISCOVER = _raw_bare_discover_invocation(sys.argv[1:])
+if _HELP_ONLY_BARE_DISCOVER:
+    os.environ["TAG_MANAGER_SUPPRESS_STARTUP_STATE"] = "1"
+
 # Ensure UTF-8 encoding for packaged binaries and all environments
 import locale
 # Try to set locale programmatically for packaged binary compatibility
@@ -409,7 +422,7 @@ def show_main_help():
 
 def _is_bare_discover_invocation() -> bool:
     """Return true only for the help-only public `discover` invocation."""
-    return len(sys.argv) == 2 and sys.argv[-1] == "discover"
+    return _HELP_ONLY_BARE_DISCOVER
 
 
 def _ensure_core_for_command(ctx: typer.Context, help_requested: bool, version_requested: bool) -> None:
@@ -561,7 +574,7 @@ def main(
     import sys
     is_help_command = '--help' in sys.argv or '-h' in sys.argv
 
-    if ctx.invoked_subcommand is not None and not no_prompt and not is_help_command:
+    if ctx.invoked_subcommand is not None and not _is_bare_discover_invocation() and not no_prompt and not is_help_command:
         # Only check tasks for actual commands, not help/version
         try:
             if __name__ == "__main__" or not __package__:

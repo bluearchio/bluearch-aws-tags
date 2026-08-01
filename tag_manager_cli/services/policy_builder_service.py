@@ -225,7 +225,7 @@ class PolicyBuilder:
 
         self.policy_description = Prompt.ask(
             "[cyan]Description[/cyan]",
-            default=self.policy_description or "Tag policy created with tag-manager"
+            default=self.policy_description or "Tag policy created with BlueArch AWS Tags"
         )
 
         self.metadata_set = True

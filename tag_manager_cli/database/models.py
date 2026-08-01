@@ -979,7 +979,7 @@ class SystemExecution(Base):
 
 
 class CloudWatchAlarm(Base):
-    """CloudWatch alarms created and tracked by tag-manager-cli."""
+    """CloudWatch alarms created and tracked by BlueArch AWS Tags."""
 
     __tablename__ = 'cloudwatch_alarms'
 

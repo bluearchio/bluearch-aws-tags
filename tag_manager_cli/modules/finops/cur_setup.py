@@ -598,6 +598,6 @@ class CURSetup:
             table.add_row("Region", config.region)
         else:
             table.add_row("Status", "[red]NOT CONFIGURED[/red]")
-            table.add_row("Action Required", "Run 'tag-manager cost setup detect' to configure")
+            table.add_row("Action Required", "Run 'bluearch-aws-tags cost setup detect' to configure")
 
         console.print(table)

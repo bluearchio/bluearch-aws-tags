@@ -38,7 +38,7 @@ class ShellRCManager:
         self.default_shell = os.path.basename(os.environ.get("SHELL", "/bin/bash"))
         self.home_dir = os.path.expanduser("~")
         self.shell_rc_file = self._get_shell_rc_file()
-        self.auto_update_command = "tag-manager --version-silent"
+        self.auto_update_command = "bluearch-aws-tags --version"
 
     def _get_shell_rc_file(self):
         if self.default_shell == "zsh":

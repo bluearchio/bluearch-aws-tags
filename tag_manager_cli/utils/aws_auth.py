@@ -319,7 +319,7 @@ class AWSAuthManager:
                 # Show warning to user (not just in debug mode) if assume-role was configured but failed
                 if self.assume_role_config:
                     console.print(f"[yellow]WARN[/yellow] Assume role failed, using direct credentials: {e}")
-                    console.print("[dim]Run 'tag-manager setup assume-role --status' to check configuration[/dim]")
+                    console.print("[dim]Run 'bluearch-aws-tags setup assume-role --status' to check configuration[/dim]")
                 elif DEBUG_MODE:
                     console.print(f"[yellow]WARN[/yellow] Assume role not applied: {e}")
                 # Continue with base session if assume-role fails

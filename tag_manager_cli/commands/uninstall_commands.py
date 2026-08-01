@@ -1,4 +1,4 @@
-"""Uninstall command - Completely remove tag-manager CLI and all AWS resources."""
+"""Uninstall command - Completely remove BlueArch AWS Tags and its AWS resources."""
 
 import os
 import shutil
@@ -44,12 +44,12 @@ def _validate_aws_credentials(region: str = "us-east-1") -> Tuple[bool, str]:
 
 
 uninstall_app = typer.Typer(
-    help="Uninstall tag-manager CLI and remove all AWS resources",
+    help="Uninstall BlueArch AWS Tags and remove all AWS resources",
     no_args_is_help=False
 )
 console = Console()
 
-# AWS Resource identifiers created by tag-manager
+# Legacy-compatible AWS resource identifiers still owned by BlueArch AWS Tags
 STACKSET_NAME = "BlueArchCLI-CrossAccount-Infrastructure"
 MANAGEMENT_STACK_NAME = "BlueArchCLI-Management-Account-Resources"
 CUR_STACK_NAME = "TagManagerCUR"
@@ -61,6 +61,8 @@ RESOURCE_GROUP_NAME = "BlueArch-TagManager"
 
 # Local paths
 LOCAL_DATA_DIR = Path.home() / ".tag-manager"
+PUBLIC_TAGS_EXECUTABLE = "bluearch-aws-tags"
+LEGACY_TAGS_EXECUTABLES = {"tag-manager"}
 
 
 def _get_aws_clients(region: str = "us-east-1") -> Dict:
@@ -79,7 +81,7 @@ def _get_aws_clients(region: str = "us-east-1") -> Dict:
 
 
 def _discover_aws_resources(region: str = "us-east-1") -> Dict[str, List]:
-    """Discover all AWS resources created by tag-manager."""
+    """Discover all AWS resources created by BlueArch AWS Tags."""
     resources = {
         "stacksets": [],
         "stacks": [],
@@ -420,7 +422,7 @@ def _delete_secrets(sm_client, secret_names: List[str]) -> Tuple[int, int]:
 
 
 def _delete_local_data() -> Tuple[bool, str]:
-    """Delete local tag-manager data directory."""
+    """Delete the local BlueArch AWS Tags data directory."""
     try:
         if LOCAL_DATA_DIR.exists():
             shutil.rmtree(LOCAL_DATA_DIR)
@@ -431,28 +433,36 @@ def _delete_local_data() -> Tuple[bool, str]:
 
 
 def _get_binary_path() -> Optional[Path]:
-    """Find the tag-manager binary if installed."""
+    """Find only the public Tags binary if installed."""
     # Check common installation paths
     paths_to_check = [
-        Path.home() / ".local" / "bin" / "tag-manager",
-        Path("/usr/local/bin/tag-manager"),
-        Path("/usr/bin/tag-manager"),
+        Path.home() / ".local" / "bin" / PUBLIC_TAGS_EXECUTABLE,
+        Path("/opt/homebrew/bin") / PUBLIC_TAGS_EXECUTABLE,
+        Path("/usr/local/bin") / PUBLIC_TAGS_EXECUTABLE,
+        Path("/usr/bin") / PUBLIC_TAGS_EXECUTABLE,
     ]
 
     for path in paths_to_check:
-        if path.exists():
+        if _is_public_tags_executable(path):
             return path
 
-    # Try which command
-    import subprocess
-    try:
-        result = subprocess.run(["which", "tag-manager"], capture_output=True, text=True)
-        if result.returncode == 0:
-            return Path(result.stdout.strip())
-    except Exception:
-        pass
+    resolved = shutil.which(PUBLIC_TAGS_EXECUTABLE)
+    if resolved and _is_public_tags_executable(Path(resolved)):
+        return Path(resolved)
 
     return None
+
+
+def _is_public_tags_executable(path: Path) -> bool:
+    """Reject legacy names and public symlinks that conceal legacy targets."""
+    if path.name in LEGACY_TAGS_EXECUTABLES or path.name != PUBLIC_TAGS_EXECUTABLE:
+        return False
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return False
+    try:
+        return path.resolve(strict=True).name == PUBLIC_TAGS_EXECUTABLE
+    except OSError:
+        return False
 
 
 @uninstall_app.callback(invoke_without_command=True)
@@ -469,7 +479,7 @@ def uninstall(
     force: bool = typer.Option(False, "--force", help="Force uninstall even if AWS credentials are invalid (will skip AWS cleanup)"),
 ):
     """
-    Completely uninstall tag-manager CLI and remove all AWS resources.
+    Completely uninstall BlueArch AWS Tags and remove all AWS resources.
 
     This command will:
 
@@ -512,15 +522,15 @@ def uninstall(
                 # Check if there might be AWS resources (we can't scan without credentials)
                 console.print(Panel(
                     "[bold yellow]Cannot proceed without AWS credentials[/bold yellow]\n\n"
-                    "AWS resources created by tag-manager cannot be discovered or deleted\n"
+                    "AWS resources created by BlueArch AWS Tags cannot be discovered or deleted\n"
                     "without valid AWS credentials. This may leave orphaned resources.\n\n"
                     "[bold]Options:[/bold]\n"
                     "  1. Configure AWS credentials and try again:\n"
                     "     [cyan]export AWS_PROFILE=your-profile && aws sso login[/cyan]\n\n"
                     "  2. Force local-only uninstall (AWS resources will remain):\n"
-                    "     [cyan]tag-manager uninstall --force[/cyan]\n\n"
+                    "     [cyan]bluearch-aws-tags uninstall --force[/cyan]\n\n"
                     "  3. Explicitly skip AWS cleanup:\n"
-                    "     [cyan]tag-manager uninstall --skip-aws[/cyan]",
+                    "     [cyan]bluearch-aws-tags uninstall --skip-aws[/cyan]",
                     title="[bold red]AWS Credentials Required[/bold red]",
                     border_style="red"
                 ))
@@ -530,9 +540,9 @@ def uninstall(
                 console.print(Panel(
                     "[bold yellow]Proceeding with --force flag[/bold yellow]\n\n"
                     "AWS resource cleanup will be skipped.\n"
-                    "Any tag-manager AWS resources will remain in your account.\n\n"
+                    "Any BlueArch AWS Tags resources will remain in your account.\n\n"
                     "To clean them up later, configure credentials and run:\n"
-                    "[cyan]tag-manager uninstall[/cyan]",
+                    "[cyan]bluearch-aws-tags uninstall[/cyan]",
                     title="[bold yellow]Warning: AWS Cleanup Skipped[/bold yellow]",
                     border_style="yellow"
                 ))
@@ -670,7 +680,7 @@ def uninstall(
     has_binary = binary_path is not None and not skip_binary
 
     if not has_aws and not has_local and not has_binary:
-        console.print("[green]Nothing to uninstall. tag-manager is already clean.[/green]")
+        console.print("[green]Nothing to uninstall. BlueArch AWS Tags is already clean.[/green]")
         return
 
     if dry_run:
@@ -681,9 +691,9 @@ def uninstall(
     console.print("[bold cyan]Phase 3: Confirmation[/bold cyan]\n")
 
     warning_panel = Panel(
-        "[bold yellow]This will remove tag-manager CLI and its AWS resources.[/bold yellow]\n\n"
-        "[dim]Only tag-manager resources will be deleted:[/dim]\n"
-        "  - StackSets and Stacks created by tag-manager\n"
+        "[bold yellow]This will remove BlueArch AWS Tags and its AWS resources.[/bold yellow]\n\n"
+        "[dim]Only BlueArch AWS Tags resources will be deleted:[/dim]\n"
+        "  - StackSets and Stacks created by BlueArch AWS Tags\n"
         "  - CloudWatch alarms with 'tag-manager' prefix\n"
         "  - SNS topics with 'tag-manager-alerts' prefix\n"
         "  - DynamoDB table 'tag-manager-cross-account'\n"
@@ -707,7 +717,7 @@ def uninstall(
         # Double confirmation for AWS resources
         if has_aws:
             confirm2 = Confirm.ask(
-                "Confirm deletion of tag-manager AWS resources?",
+                "Confirm deletion of BlueArch AWS Tags resources?",
                 default=False
             )
             if not confirm2:
@@ -839,13 +849,16 @@ def uninstall(
     # Delete binary
     if not skip_binary and has_binary:
         console.print(f"[yellow]Deleting CLI binary:[/yellow] {binary_path}")
-        try:
-            binary_path.unlink()
-            print_success(f"  Deleted: {binary_path}")
-        except Exception as e:
-            print_error(f"  Failed: {e}")
-            errors.append(f"Binary: {e}")
-            console.print(f"  [dim]You may need to manually delete: sudo rm {binary_path}[/dim]")
+        if not _is_public_tags_executable(binary_path):
+            print_warning(f"  Not deleting non-public or legacy launcher: {binary_path}")
+        else:
+            try:
+                binary_path.unlink()
+                print_success(f"  Deleted: {binary_path}")
+            except Exception as e:
+                print_error(f"  Failed: {e}")
+                errors.append(f"Binary: {e}")
+                console.print(f"  [dim]You may need to manually delete: sudo rm {binary_path}[/dim]")
 
     # Phase 5: Summary
     console.print("\n[bold cyan]Phase 5: Summary[/bold cyan]\n")
@@ -857,5 +870,5 @@ def uninstall(
         console.print("\n[yellow]Some resources may need manual cleanup.[/yellow]")
     else:
         print_success("Uninstall completed successfully!")
-        console.print("\n[green]All tag-manager resources have been removed.[/green]")
-        console.print("[dim]Thank you for using tag-manager![/dim]")
+        console.print("\n[green]All BlueArch AWS Tags resources have been removed.[/green]")
+        console.print("[dim]Thank you for using BlueArch AWS Tags![/dim]")

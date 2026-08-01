@@ -6,7 +6,6 @@ Top-level commands for discovering AWS resources across services and regions.
 import typer
 from typing import Optional
 from rich.console import Console
-from ..modules.collection.collectors import COLLECTORS
 from ..utils.error_handlers import require_aws_credentials, handle_all_errors
 from ..utils.aws_auth import aws_auth
 from ..utils.console_safe import safe_print
@@ -37,7 +36,7 @@ def show_discover_help():
     console.print("- [dim]--accounts 123,456[/dim]  # Scan specific account IDs\n")
 
     console.print("[bold yellow]REGION OPTIONS[/bold yellow] (where to scan):")
-    console.print("- [dim]discover --regions us-east-1,eu-west-1[/dim]  # Specific regions\n")
+    console.print("- [dim]discover all --regions us-east-1,eu-west-1[/dim]  # Specific regions\n")
 
     console.print("[bold magenta]OTHER OPTIONS[/bold magenta]:")
     console.print("- [dim]--force[/dim]             # Force fresh scan, ignore cache")
@@ -48,8 +47,8 @@ def show_discover_help():
     console.print("2. [dim]discover all --single-account[/dim]     # Current account only")
     console.print("3. [dim]discover ec2[/dim]                       # EC2 across all accounts")
     console.print("4. [dim]discover lambda --regions us-east-1[/dim] # Lambda in one region, all accounts")
-    console.print("5. [dim]discover --regions all[/dim]             # Scan all enabled regions")
-    console.print("6. [dim]discover --force[/dim]                   # Force fresh scan\n")
+    console.print("5. [dim]discover all --regions all[/dim]         # Scan all enabled regions")
+    console.print("6. [dim]discover all --force[/dim]               # Force fresh scan\n")
 
     console.print("[bold cyan]PERFORMANCE NOTES[/bold cyan]:")
     console.print("- Runs up to 10 discoveries concurrently")
@@ -89,13 +88,13 @@ def discover_callback(
     - Use --accounts to specify specific account IDs
 
     Examples:
-        discover                           # Scan enabled accounts in US regions
-        discover --single-account          # Force scan current account only
+        discover all                       # Scan enabled accounts in US regions
+        discover all --single-account      # Force scan current account only
         discover ec2                       # Only EC2 in all enabled accounts
         discover lambda --regions us-east-1,eu-west-1  # Specific service and regions
-        discover --accounts 123456789012,234567890123  # Specific accounts only
-        discover --regions all             # Scan all enabled regions
-        discover --force                   # Force fresh scan, ignore cache
+        discover all --accounts 123456789012,234567890123  # Specific accounts only
+        discover all --regions all         # Scan all enabled regions
+        discover all --force               # Force fresh scan, ignore cache
 
     Service Options:
         all      - Discover all supported services (EC2, S3, Lambda)
@@ -196,6 +195,7 @@ def discover_lambda(
 @handle_all_errors
 def discover_resources_internal(services: str, regions: Optional[str], force: bool, multi_account: bool = False, single_account: bool = False, accounts: Optional[str] = None):
     """Internal function to perform resource discovery."""
+    from ..modules.collection.collectors import COLLECTORS
 
     # Check if we should do multi-account discovery by default
     from ..modules.multi_account_discovery import multi_account_discovery

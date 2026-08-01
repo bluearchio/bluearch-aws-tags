@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 # Supported TTL tag names in priority order
 TTL_TAG_NAMES = [
-    # tag-manager namespace (preferred)
+    # Legacy-compatible tag-manager namespace (preferred)
     "tag-manager:TTL",
     "tag-manager:ExpireAfter",
     "tag-manager:DeleteAfter",
