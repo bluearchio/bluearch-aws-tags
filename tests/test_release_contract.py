@@ -14,6 +14,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 DEVELOPMENT_WORKFLOW = ROOT / ".github" / "workflows" / "development-binaries.yml"
 PREFLIGHT_WORKFLOW = ROOT / ".github" / "workflows" / "release-preflight.yml"
 QUALITY_WORKFLOW = ROOT / ".github" / "workflows" / "development-quality.yml"
@@ -207,6 +208,17 @@ def test_release_credentials_preflight_runs_before_tests_and_builds() -> None:
     assert "secrets." not in commands
 
 
+def test_release_verify_keeps_httpx2_test_dependency_in_parity_with_ci() -> None:
+    ci = yaml.load(CI_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+    _, ci_install = _named_step(ci["jobs"]["python"], "Install")
+    _, release_install = _named_step(
+        _workflow()["jobs"]["verify"], "Install test dependencies"
+    )
+
+    assert "httpx2" in ci_install["run"].split()
+    assert "httpx2" in release_install["run"].split()
+
+
 def test_branch_named_like_a_release_tag_cannot_use_manual_dispatch() -> None:
     verify_job = _workflow()["jobs"]["verify"]
     gate = _run_text(verify_job)
@@ -369,11 +381,32 @@ def test_release_publication_is_resumable_and_never_mutates_public_assets() -> N
     )
     commands = release["run"]
 
-    assert 'release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"' in commands
-    assert 'release_is_draft="$(gh api "$release_endpoint" --jq \'.draft\')"' in commands
-    assert 'if [[ "$release_is_draft" == "true" ]]' in commands
+    release_view = (
+        'gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" '
+        "--json databaseId,isDraft,tagName"
+    )
+    assert 'releases/tags/${RELEASE_TAG}' not in commands
+    assert commands.count(release_view) == 2
+    assert "--jq '[.databaseId, .tagName, .isDraft] | @tsv'" in commands
+    assert "release_exists=false" in commands
+    assert "release_exists=true" in commands
+    assert "IFS=$'\\t' read -r release_id release_tag release_is_draft" in commands
+    first_view = commands.index(release_view)
+    create = commands.index('gh release create "$RELEASE_TAG"')
+    second_view = commands.rindex(release_view)
+    parse = commands.index("IFS=$'\\t' read -r release_id release_tag release_is_draft")
+    assert first_view < create < second_view < parse
+    assert '[[ "${release_id}" =~ ^[0-9]+$ ]]' in commands
+    assert '[[ "${release_tag}" == "${RELEASE_TAG}" ]]' in commands
+    assert (
+        '[[ "${release_is_draft}" == "true" || '
+        '"${release_is_draft}" == "false" ]]' in commands
+    )
+    assert 'if [[ "${release_exists}" == "true" ]]' in commands
+    assert 'if [[ "${release_is_draft}" == "true" ]]' in commands
     assert 'gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber' in commands
-    assert 'Release $RELEASE_TAG is already public; verifying it without mutation.' in commands
+    assert 'Resuming existing draft release ${RELEASE_TAG}.' in commands
+    assert 'Release ${RELEASE_TAG} is already public; verifying it without mutation.' in commands
     assert 'select(.state == "uploaded") | [.name, .digest]' in commands
     assert 'diff -q "$expected_assets" "$remote_assets"' in commands
     assert 'gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false' in commands
@@ -521,7 +554,7 @@ def test_committed_versions_are_bare_and_equal() -> None:
     setup_version = re.search(r'^PACKAGE_VERSION = "([^"]+)"$', setup_text, re.MULTILINE).group(1)
     init_version = re.search(r'^__version__ = "([^"]+)"$', init_text, re.MULTILINE).group(1)
 
-    assert setup_version == init_version == "0.12.4"
+    assert setup_version == init_version == "0.12.5"
     assert re.fullmatch(r"\d+\.\d+\.\d+", init_version)
 
 
@@ -546,7 +579,7 @@ def test_module_version_probe_is_exact_and_stateless(
     )
 
     assert result.returncode == 0
-    assert result.stdout == "bluearch-aws-tags 0.12.4 (production)\n"
+    assert result.stdout == "bluearch-aws-tags 0.12.5 (production)\n"
     assert result.stderr == ""
     assert list(home.iterdir()) == []
 
@@ -574,7 +607,7 @@ def test_installed_public_command_version_is_exact_and_stateless(
     )
 
     assert result.returncode == 0
-    assert result.stdout == "bluearch-aws-tags 0.12.4 (production)\n"
+    assert result.stdout == "bluearch-aws-tags 0.12.5 (production)\n"
     assert result.stderr == ""
     assert list(home.iterdir()) == []
 
