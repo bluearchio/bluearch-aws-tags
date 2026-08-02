@@ -159,6 +159,8 @@ def test_legacy_automation_helper_redirects_to_registered_public_workflow() -> N
     assert "bluearch-aws-tags lifecycle policies create" in script
     assert "bluearch-aws-tags lifecycle set-ttl --dry-run" in script
     assert "bluearch-aws-tags policy check-compliance --details" in script
+    assert "Review AWS Organizations tag-policy compliance outcomes:" in script
+    assert "Scan for untagged resources:" not in script
     assert "tag_manager_cli.main database " not in script
     assert "tag_manager_cli.main tagging " not in script
     assert "tag_manager_cli.main workers " not in script

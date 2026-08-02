@@ -94,7 +94,7 @@ echo ""
 # Step 5: Next steps
 print_info "Next Steps - Lifecycle Management:"
 echo ""
-echo "1. Scan for untagged resources:"
+echo "1. Review AWS Organizations tag-policy compliance outcomes:"
 echo "   bluearch-aws-tags policy check-compliance --details"
 echo ""
 echo "2. Start the guided lifecycle workflow:"

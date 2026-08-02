@@ -8,6 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 import typer
+from rich.console import Console
 
 from tag_manager_cli.commands import (
     account_commands,
@@ -165,6 +166,92 @@ def test_all_contextual_suggestions_use_registered_public_roots():
 def test_suggestion_renderer_rejects_unregistered_bare_namespace():
     with pytest.raises(ValueError, match="Unregistered public command suggestion"):
         CommandSuggestions._public_command("tags scan")
+
+
+@pytest.mark.parametrize(
+    ("context", "data", "expected_command"),
+    (
+        (
+            "tags.scan",
+            {"untagged_count": 75, "top_service": "ec2"},
+            "lifecycle set-ttl --services ec2 --dry-run",
+        ),
+        ("tags.scan", {"untagged_count": 4}, "lifecycle wizard"),
+        (
+            "workers.discover",
+            {"success": True, "discovered_count": 8},
+            "lifecycle scan",
+        ),
+        (
+            "tags.apply",
+            {"success": True, "resources_tagged": 3},
+            "lifecycle review --include-active",
+        ),
+        (
+            "system.validate",
+            {"all_valid": False, "failed_checks": ["AWS credentials"]},
+            "setup aws",
+        ),
+        (
+            "system.validate",
+            {"all_valid": False, "failed_checks": ["Docker runtime"]},
+            "setup doctor",
+        ),
+        ("workers.health", {"issues_fixed": 2}, "setup validate"),
+        ("update.check", {"updates_available": 1}, "update --yes"),
+    ),
+    ids=(
+        "many-untagged",
+        "few-untagged",
+        "resources-discovered",
+        "resources-tagged",
+        "aws-validation-failure",
+        "docker-validation-failure",
+        "worker-fixes",
+        "update-available",
+    ),
+)
+def test_dynamic_suggestions_render_registered_public_commands(
+    context,
+    data,
+    expected_command,
+    capsys,
+):
+    from tag_manager_cli.main import app
+
+    suggestions = CommandSuggestions()
+    suggestions.console = Console(width=240)
+    contextual = suggestions._get_contextual_suggestions(context, data)
+
+    assert contextual[0]["cmd"] == expected_command
+
+    parts = shlex.split(expected_command)
+    current = typer.main.get_command(app)
+    index = 0
+    while getattr(current, "commands", None):
+        token = parts[index]
+        assert token in current.commands
+        current = current.commands[token]
+        index += 1
+
+    with current.make_context(current.name or "command", parts[index:]):
+        pass
+
+    suggestions.show_suggestions(context, data=data, show_tip=False)
+    output = capsys.readouterr().out
+    assert f"bluearch-aws-tags {expected_command}" in output
+    for unavailable_root in (
+        "accounts",
+        "database",
+        "docker",
+        "service",
+        "system",
+        "tag",
+        "tags",
+        "tasks",
+        "workers",
+    ):
+        assert f"bluearch-aws-tags {unavailable_root} " not in output
 
 
 def test_all_prefixed_suggestion_renderers_emit_only_public_command_roots(capsys):
