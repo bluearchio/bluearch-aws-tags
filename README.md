@@ -15,17 +15,32 @@ This repo is not a hosted account system, analytics collector, or commercial lic
 
 ## Install
 
+Installing a fully qualified formula automatically adds the tap and trusts only
+that formula. Install Core explicitly first so Homebrew records trust for the
+separate dependency before resolving Tags. A separate `brew tap` or `brew trust`
+command is not needed for a first-time install. See
+[Homebrew's tap-trust documentation](https://docs.brew.sh/Tap-Trust).
+
 ```bash
-brew tap bluearchio/tap
-brew trust --formula bluearchio/tap/bluearch-aws-core
-brew trust --formula bluearchio/tap/bluearch-aws-tags
+brew install bluearchio/tap/bluearch-aws-core
 brew install bluearchio/tap/bluearch-aws-tags
 bluearch-aws-core start --daemon
 bluearch-aws-tags discover all
 ```
 
-Formula-specific trust is intentionally narrower than trusting the whole tap. The Tags formula depends on
-`bluearch-aws-core`, so Homebrew installs Core automatically even though only the Tags formula is installed explicitly.
+`brew tap bluearchio/tap` only downloads and registers the repository; it does
+not grant trust. Whole-tap trust is unnecessary.
+
+### Recovery for an existing tap
+
+If an existing or partially completed installation refuses to load either
+formula, trust only Core and Tags, then retry the product installation:
+
+```bash
+brew trust --formula bluearchio/tap/bluearch-aws-core
+brew trust --formula bluearchio/tap/bluearch-aws-tags
+brew install bluearchio/tap/bluearch-aws-tags
+```
 
 Linux:
 
