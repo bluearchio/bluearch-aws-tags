@@ -459,9 +459,9 @@ jobs:
             gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$RELEASE_TAG" --generate-notes
             release_info="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json databaseId,isDraft,tagName --jq '[.databaseId, .tagName, .isDraft] | @tsv')"
           fi
-          IFS=$'\t' read -r release_id release_tag release_is_draft <<< "${release_info}"
+          IFS=$'\t' read -r release_id resolved_tag release_is_draft <<< "${release_info}"
           [[ "${release_id}" =~ ^[0-9]+$ ]] || { echo "::error::Unable to resolve release ID"; exit 1; }
-          [[ "${release_tag}" == "${RELEASE_TAG}" ]] || { echo "::error::Release tag identity mismatch"; exit 1; }
+          [[ "${resolved_tag}" == "${RELEASE_TAG}" ]] || { echo "::error::Release tag identity mismatch"; exit 1; }
           [[ "${release_is_draft}" == "true" || "${release_is_draft}" == "false" ]] || { echo "::error::Invalid release draft state"; exit 1; }
 
           if [[ "${release_is_draft}" == "true" ]]; then

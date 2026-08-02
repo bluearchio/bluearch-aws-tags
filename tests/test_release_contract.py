@@ -390,14 +390,14 @@ def test_release_publication_is_resumable_and_never_mutates_public_assets() -> N
     assert "--jq '[.databaseId, .tagName, .isDraft] | @tsv'" in commands
     assert "release_exists=false" in commands
     assert "release_exists=true" in commands
-    assert "IFS=$'\\t' read -r release_id release_tag release_is_draft" in commands
+    assert "IFS=$'\\t' read -r release_id resolved_tag release_is_draft" in commands
     first_view = commands.index(release_view)
     create = commands.index('gh release create "$RELEASE_TAG"')
     second_view = commands.rindex(release_view)
-    parse = commands.index("IFS=$'\\t' read -r release_id release_tag release_is_draft")
+    parse = commands.index("IFS=$'\\t' read -r release_id resolved_tag release_is_draft")
     assert first_view < create < second_view < parse
     assert '[[ "${release_id}" =~ ^[0-9]+$ ]]' in commands
-    assert '[[ "${release_tag}" == "${RELEASE_TAG}" ]]' in commands
+    assert '[[ "${resolved_tag}" == "${RELEASE_TAG}" ]]' in commands
     assert (
         '[[ "${release_is_draft}" == "true" || '
         '"${release_is_draft}" == "false" ]]' in commands
