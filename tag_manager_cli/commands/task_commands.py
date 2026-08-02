@@ -154,7 +154,7 @@ def disable_prompts(
         task_tracker.disable_prompts(hours)
     else:
         task_tracker.disable_prompts()
-        print_safe("Run 'tag-manager tasks enable' to re-enable")
+        print_safe("Run 'bluearch-aws-tags tasks enable' to re-enable")
 
 
 @task_app.command("reset")
@@ -190,7 +190,7 @@ def mark_task_complete(
             return
 
     print_error(f"Unknown task: {task_name}")
-    print_safe("Use 'tag-manager tasks list' to see available tasks")
+    print_safe("Use 'bluearch-aws-tags tasks list' to see available tasks")
 
 
 @task_app.command("status")

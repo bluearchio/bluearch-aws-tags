@@ -75,7 +75,7 @@ jobs:
           python -m pytest tag_manager_cli/tests tests -q
           python -m compileall -q tag_manager_cli
           npm --prefix frontend run build
-          bash -n scripts/build_nuitka_linux.sh scripts/build_nuitka_macos.sh scripts/install-linux.sh scripts/verify_macos_artifact.sh
+          bash -n install.sh scripts/build_nuitka_linux.sh scripts/build_nuitka_macos.sh scripts/clean-uninstall.sh scripts/install-linux.sh scripts/verify_macos_artifact.sh
 
   linux:
     name: Verified Linux release binary
@@ -225,7 +225,7 @@ jobs:
           mkdir -p artifacts
           codesign --force --timestamp --options runtime --entitlements entitlements.plist --sign "$MACOS_CODESIGN_IDENTITY" --keychain "$KEYCHAIN_PATH" "dist/$BINARY_NAME"
           codesign --verify --deep --strict --verbose=2 "dist/$BINARY_NAME"
-          ditto -c -k --keepParent "dist/$BINARY_NAME" "artifacts/$BINARY_NAME-macos-arm64.zip"
+          ditto --norsrc -c -k "dist/$BINARY_NAME" "artifacts/$BINARY_NAME-macos-arm64.zip"
           if [[ -n "${APPLE_API_KEY_ID:-}" && -n "${APPLE_API_ISSUER_ID:-}" && -f "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" ]]; then
             xcrun notarytool submit "artifacts/$BINARY_NAME-macos-arm64.zip" --key "$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
           elif [[ -n "${APPLE_ID:-}" && -n "${APPLE_ID_PASSWORD:-}" && -n "${APPLE_TEAM_ID:-}" ]]; then
@@ -234,7 +234,8 @@ jobs:
             echo "::error::Missing notarization credentials"
             exit 1
           fi
-          bash scripts/verify_macos_artifact.sh "artifacts/$BINARY_NAME-macos-arm64.zip" "$BINARY_NAME"
+          expected_version="${RELEASE_TAG#v}"
+          bash scripts/verify_macos_artifact.sh "artifacts/$BINARY_NAME-macos-arm64.zip" "$BINARY_NAME" "$expected_version"
       - name: Generate final macOS artifact SBOM
         uses: anchore/sbom-action@v0.24.0
         with:
@@ -279,6 +280,7 @@ jobs:
       - name: Publish immutable release assets
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         shell: bash
         run: |
           set -euo pipefail

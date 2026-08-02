@@ -422,14 +422,8 @@ def _delete_secrets(sm_client, secret_names: List[str]) -> Tuple[int, int]:
 
 
 def _delete_local_data() -> Tuple[bool, str]:
-    """Delete the local BlueArch AWS Tags data directory."""
-    try:
-        if LOCAL_DATA_DIR.exists():
-            shutil.rmtree(LOCAL_DATA_DIR)
-            return True, f"Deleted {LOCAL_DATA_DIR}"
-        return True, "No local data found"
-    except Exception as e:
-        return False, str(e)
+    """Preserve the shared legacy data directory during public uninstall."""
+    return True, f"Preserved shared/deprecated data at {LOCAL_DATA_DIR}"
 
 
 def _get_binary_path() -> Optional[Path]:
@@ -471,7 +465,7 @@ def uninstall(
     ctx: typer.Context,
     region: str = typer.Option("us-east-1", "--region", "-r", help="AWS region"),
     skip_aws: bool = typer.Option(False, "--skip-aws", help="Skip AWS resource deletion"),
-    skip_local: bool = typer.Option(False, "--skip-local", help="Skip local data deletion"),
+    skip_local: bool = typer.Option(False, "--skip-local", help="Deprecated compatibility flag; local legacy/shared data is always preserved"),
     skip_binary: bool = typer.Option(False, "--skip-binary", help="Skip CLI binary removal"),
     keep_cur: bool = typer.Option(False, "--keep-cur", help="Keep CUR (Cost & Usage Report) stack during uninstall"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Show what would be deleted without deleting"),
@@ -491,16 +485,13 @@ def uninstall(
        - DynamoDB Table (tag-manager-cross-account)
        - Secrets Manager secrets (tag-manager-* prefix)
 
-    2. Delete local data:
-       - SQLite database (~/.tag-manager/data/)
-       - Cache files (~/.tag-manager/cache/)
-       - Configuration (~/.tag-manager/)
+    2. Preserve local legacy/shared data and configuration.
 
-    3. Remove CLI binary (if installed via install script)
+    3. Remove only the public bluearch-aws-tags binary (if installed manually).
 
     Use --dry-run to preview what would be deleted.
     """
-    console.print("\n[bold red]TAG-MANAGER UNINSTALL[/bold red]\n")
+    console.print("\n[bold red]BLUEARCH AWS TAGS UNINSTALL[/bold red]\n")
 
     if dry_run:
         console.print("[yellow]DRY RUN MODE - No changes will be made[/yellow]\n")
@@ -657,13 +648,14 @@ def uninstall(
             console.print(table)
             console.print(f"\n[bold]Total AWS resources: {total_aws}[/bold]\n")
 
-    # Local Data
-    if not skip_local:
-        if local_data_exists:
-            size_mb = local_data_size / (1024 * 1024)
-            console.print(f"[cyan]Local Data:[/cyan] {LOCAL_DATA_DIR} ({size_mb:.2f} MB)")
-        else:
-            console.print("[green]No local data found.[/green]")
+    # Local data is shared with the deprecated product and is never deleted.
+    if local_data_exists:
+        size_mb = local_data_size / (1024 * 1024)
+        console.print(
+            f"[green]Preserved legacy/shared local data:[/green] {LOCAL_DATA_DIR} ({size_mb:.2f} MB)"
+        )
+    else:
+        console.print("[dim]No legacy/shared local data found; no data path will be removed.[/dim]")
 
     # Binary
     if not skip_binary:
@@ -676,7 +668,7 @@ def uninstall(
 
     # Check if there's anything to delete
     has_aws = any(aws_resources.get(k) for k in aws_resources) if aws_resources else False
-    has_local = local_data_exists and not skip_local
+    has_local = False
     has_binary = binary_path is not None and not skip_binary
 
     if not has_aws and not has_local and not has_binary:
@@ -836,16 +828,6 @@ def uninstall(
         except Exception as e:
             console.print(f"[dim]Could not clean EventSync core records: {e}[/dim]")
 
-    # Delete local data
-    if not skip_local and has_local:
-        console.print(f"[yellow]Deleting local data:[/yellow] {LOCAL_DATA_DIR}")
-        success, msg = _delete_local_data()
-        if success:
-            print_success(f"  {msg}")
-        else:
-            print_error(f"  Failed: {msg}")
-            errors.append(f"Local data: {msg}")
-
     # Delete binary
     if not skip_binary and has_binary:
         console.print(f"[yellow]Deleting CLI binary:[/yellow] {binary_path}")
@@ -871,4 +853,5 @@ def uninstall(
     else:
         print_success("Uninstall completed successfully!")
         console.print("\n[green]All BlueArch AWS Tags resources have been removed.[/green]")
+        console.print(f"[green]Deprecated closed-source binaries and shared data at {LOCAL_DATA_DIR} were preserved.[/green]")
         console.print("[dim]Thank you for using BlueArch AWS Tags![/dim]")

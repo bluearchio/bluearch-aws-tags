@@ -28,6 +28,7 @@ from ..utils.public_executables import (
     PUBLIC_TAGS_FORMULA,
     PUBLIC_TAGS_EXECUTABLE,
     probe_public_tags_version,
+    public_tags_version_label,
     resolve_homebrew_executable,
     resolve_public_tags_executable,
 )
@@ -1092,13 +1093,11 @@ def doctor():
         if probe is not None:
             canonical_path, result = probe
             # Get version
-            version = "unknown"
-            if result.returncode == 0:
-                # Extract version from output like "AWS Tag Manager CLI v0.3.4 (production)"
-                for line in result.stdout.split("\n"):
-                    if "Tag Manager CLI" in line:
-                        version = line.strip()
-                        break
+            version = (
+                public_tags_version_label(result.stdout)
+                if result.returncode == 0
+                else None
+            ) or "unknown"
             found_binaries[name] = {
                 "path": path,
                 "canonical_path": canonical_path,

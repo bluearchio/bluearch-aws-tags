@@ -100,7 +100,17 @@ gh attestation verify bluearch-aws-tags-linux-x86_64.tar.gz --repo bluearchio/bl
 
 For macOS, verify `bluearch-aws-tags-macos-arm64.zip` with `gh attestation verify`.
 
-Release workflows also open a pull request against `bluearchio/homebrew-tap` to update `bluearch-aws-tags`. Configure `HOMEBREW_TAP_TOKEN_2` before cutting a public tag.
+The release workflow intentionally stops after publishing verified GitHub release assets. Before changing the
+Homebrew tap, complete the separate distribution checkpoint:
+
+1. Mirror the verified archive, `install-linux.sh`, and `SHA256SUMS` to
+   `https://dist.bluearch.io/releases/bluearch-aws-tags/<tag>` and update the `latest` route.
+2. Publish this repository's thin public `install.sh` dispatcher at
+   `https://dist.bluearch.io/install/bluearch-aws-tags.sh`.
+3. Verify the public install endpoint and a clean Linux installation, including
+   `bluearch-aws-core >= 0.2.6`.
+4. Update `bluearchio/homebrew-tap` manually with the mirrored macOS URL and SHA-256, then verify a clean
+   formula-specific-trust installation. The release workflow does not mutate the tap automatically.
 
 ## Security And Privacy Defaults
 

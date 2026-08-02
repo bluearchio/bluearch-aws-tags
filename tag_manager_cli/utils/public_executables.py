@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -12,6 +13,9 @@ PUBLIC_TAGS_EXECUTABLE = "bluearch-aws-tags"
 PUBLIC_HOMEBREW_EXECUTABLE = "brew"
 PUBLIC_CORE_FORMULA = "bluearchio/tap/bluearch-aws-core"
 PUBLIC_TAGS_FORMULA = "bluearchio/tap/bluearch-aws-tags"
+PUBLIC_TAGS_VERSION_LINE = re.compile(
+    r"^bluearch-aws-tags\s+v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?(?:\s+\([^\n]+\))?$"
+)
 
 
 def resolve_exact_executable(candidate: str | None, expected_name: str) -> str | None:
@@ -66,3 +70,15 @@ def probe_public_tags_version(
     except (OSError, subprocess.SubprocessError):
         return None
     return executable, result
+
+
+def public_tags_version_label(output: str) -> str | None:
+    """Return a displayable version line from the public executable output."""
+    for raw_line in output.splitlines():
+        line = raw_line.strip()
+        if PUBLIC_TAGS_VERSION_LINE.fullmatch(line):
+            return line
+        # Keep recognizing older public builds while customers upgrade.
+        if "Tag Manager CLI" in line:
+            return line
+    return None

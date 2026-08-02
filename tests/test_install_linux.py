@@ -14,6 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "install-linux.sh"
 ASSET = "bluearch-aws-tags-linux-x86_64.tar.gz"
 BINARY = "bluearch-aws-tags"
+CORE_ASSET = "bluearch-aws-core-linux-x86_64.tar.gz"
+CORE_BINARY = "bluearch-aws-core"
 
 
 def _write_uname(bin_dir: Path) -> None:
@@ -28,6 +30,13 @@ def _write_uname(bin_dir: Path) -> None:
         encoding="utf-8",
     )
     uname.chmod(0o755)
+
+
+def _write_executable(path: Path, body: str) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"#!/bin/sh\n{body}\n", encoding="utf-8")
+    path.chmod(0o755)
+    return path
 
 
 def _tar_bytes(entries: list[tuple[str, str, bytes]]) -> bytes:
@@ -52,6 +61,11 @@ def _run_installer(
     tmp_path: Path,
     archive: bytes,
     checksum_lines: list[str] | None,
+    *,
+    existing_core: Path | None = None,
+    core_archive: bytes | None = None,
+    core_checksum_lines: list[str] | None = None,
+    core_policy: str = "missing",
 ) -> subprocess.CompletedProcess[str]:
     release_dir = (
         tmp_path
@@ -71,13 +85,36 @@ def _run_installer(
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
     _write_uname(bin_dir)
+    if existing_core is None:
+        existing_core = _write_executable(
+            bin_dir / CORE_BINARY,
+            "echo 'bluearch-aws-core 0.2.6 (production)'",
+        )
+    elif existing_core.parent != bin_dir:
+        (bin_dir / CORE_BINARY).symlink_to(existing_core)
+
+    if core_archive is not None:
+        core_release_dir = (
+            tmp_path
+            / "dist"
+            / "releases"
+            / "bluearch-aws-core"
+            / "latest"
+        )
+        core_release_dir.mkdir(parents=True)
+        (core_release_dir / CORE_ASSET).write_bytes(core_archive)
+        if core_checksum_lines is not None:
+            (core_release_dir / "SHA256SUMS").write_text(
+                "\n".join(core_checksum_lines) + "\n",
+                encoding="utf-8",
+            )
     install_dir = tmp_path / "install"
     env = {
         **os.environ,
         "PATH": f"{bin_dir}:{os.environ['PATH']}",
         "HOME": str(tmp_path / "home"),
         "INSTALL_DIR": str(install_dir),
-        "BLUEARCH_INSTALL_CORE": "skip",
+        "BLUEARCH_INSTALL_CORE": core_policy,
         "BLUEARCH_DIST_BASE_URL": f"file://{tmp_path / 'dist'}",
     }
     return subprocess.run(
@@ -137,3 +174,129 @@ def test_installer_accepts_one_verified_top_level_binary(tmp_path: Path) -> None
     installed = tmp_path / "install" / BINARY
     assert installed.is_file()
     assert os.access(installed, os.X_OK)
+
+
+def test_installer_accepts_existing_exact_public_core_at_minimum_version(tmp_path: Path) -> None:
+    archive = _tar_bytes([(BINARY, "file", b"#!/bin/sh\nexit 0\n")])
+
+    result = _run_installer(tmp_path, archive, [f"{_digest(archive)}  {ASSET}"])
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Using existing bluearch-aws-core >= 0.2.6" in result.stdout
+
+
+def test_installer_never_executes_public_symlink_to_legacy_core(tmp_path: Path) -> None:
+    marker = tmp_path / "legacy-core-ran"
+    legacy = _write_executable(
+        tmp_path / "legacy" / "bluearch-core",
+        f"touch '{marker}'\necho 'bluearch-core 99.0.0'",
+    )
+    product_archive = _tar_bytes([(BINARY, "file", b"#!/bin/sh\nexit 0\n")])
+    core_archive = _tar_bytes(
+        [(CORE_BINARY, "file", b"#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")]
+    )
+
+    result = _run_installer(
+        tmp_path,
+        product_archive,
+        [f"{_digest(product_archive)}  {ASSET}"],
+        existing_core=legacy,
+        core_archive=core_archive,
+        core_checksum_lines=[f"{_digest(core_archive)}  {CORE_ASSET}"],
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not marker.exists()
+    assert (tmp_path / "install" / CORE_BINARY).is_file()
+
+
+def test_installer_replaces_outdated_exact_public_core(tmp_path: Path) -> None:
+    outdated = _write_executable(
+        tmp_path / "outdated" / CORE_BINARY,
+        "echo 'bluearch-aws-core 0.2.5 (production)'",
+    )
+    product_archive = _tar_bytes([(BINARY, "file", b"#!/bin/sh\nexit 0\n")])
+    core_archive = _tar_bytes(
+        [(CORE_BINARY, "file", b"#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")]
+    )
+
+    result = _run_installer(
+        tmp_path,
+        product_archive,
+        [f"{_digest(product_archive)}  {ASSET}"],
+        existing_core=outdated,
+        core_archive=core_archive,
+        core_checksum_lines=[f"{_digest(core_archive)}  {CORE_ASSET}"],
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    installed_core = tmp_path / "install" / CORE_BINARY
+    version = subprocess.run(
+        [installed_core, "--version"], capture_output=True, text=True, check=True
+    )
+    assert "0.2.6" in version.stdout
+
+
+def test_installer_rejects_public_named_core_with_legacy_version_identity(tmp_path: Path) -> None:
+    impostor = _write_executable(
+        tmp_path / "impostor" / CORE_BINARY,
+        "echo 'bluearch-core 9.9.9'",
+    )
+    product_archive = _tar_bytes([(BINARY, "file", b"#!/bin/sh\nexit 0\n")])
+    core_archive = _tar_bytes(
+        [(CORE_BINARY, "file", b"#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")]
+    )
+
+    result = _run_installer(
+        tmp_path,
+        product_archive,
+        [f"{_digest(product_archive)}  {ASSET}"],
+        existing_core=impostor,
+        core_archive=core_archive,
+        core_checksum_lines=[f"{_digest(core_archive)}  {CORE_ASSET}"],
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    installed_core = tmp_path / "install" / CORE_BINARY
+    version = subprocess.run(
+        [installed_core, "--version"], capture_output=True, text=True, check=True
+    )
+    assert version.stdout.strip() == "bluearch-aws-core 0.2.6"
+
+
+def test_installer_rejects_outdated_verified_core_release(tmp_path: Path) -> None:
+    legacy = _write_executable(
+        tmp_path / "legacy" / "bluearch-core",
+        "echo 'bluearch-core 99.0.0'",
+    )
+    product_archive = _tar_bytes([(BINARY, "file", b"#!/bin/sh\nexit 0\n")])
+    core_archive = _tar_bytes(
+        [(CORE_BINARY, "file", b"#!/bin/sh\necho 'bluearch-aws-core 0.2.5'\n")]
+    )
+
+    result = _run_installer(
+        tmp_path,
+        product_archive,
+        [f"{_digest(product_archive)}  {ASSET}"],
+        existing_core=legacy,
+        core_archive=core_archive,
+        core_checksum_lines=[f"{_digest(core_archive)}  {CORE_ASSET}"],
+    )
+
+    assert result.returncode != 0
+    assert not (tmp_path / "install" / CORE_BINARY).exists()
+    assert not (tmp_path / "install" / BINARY).exists()
+
+
+def test_installer_has_no_core_dependency_bypass(tmp_path: Path) -> None:
+    archive = _tar_bytes([(BINARY, "file", b"#!/bin/sh\nexit 0\n")])
+
+    result = _run_installer(
+        tmp_path,
+        archive,
+        [f"{_digest(archive)}  {ASSET}"],
+        core_policy="skip",
+    )
+
+    assert result.returncode != 0
+    assert "Use missing or always" in result.stderr

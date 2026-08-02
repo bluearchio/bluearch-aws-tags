@@ -204,7 +204,7 @@ def scan_untagged_resources(
    ERROR Database is not initialized or accessible!
 
    Please initialize the database:
-     tag-manager database init
+     bluearch-aws-tags database init
    ```
 
 3. **`@handle_all_errors`** catches ANY unexpected errors:
@@ -212,7 +212,7 @@ def scan_untagged_resources(
    ERROR Unexpected error: [error details]
 
    If this problem persists, please report it:
-     https://github.com/bluearchio/tag-manager-cli/issues
+     https://github.com/bluearchio/bluearch-aws-tags/issues
    ```
 
 ---
@@ -261,7 +261,7 @@ $ tags scan
 # Output:
 WARN No resources found in database!
 Run resource discovery first:
-  tag-manager tags discover
+  bluearch-aws-tags tags discover
 ```
 
 ### Test Success

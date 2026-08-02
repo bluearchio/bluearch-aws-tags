@@ -19,7 +19,7 @@ A comprehensive command-line interface for managing AWS tags and related functio
 
 ```bash
 git clone <repository-url>
-cd tag-manager-cli
+cd bluearch-aws-tags
 pip install -r requirements.txt
 pip install -e .
 ```
@@ -27,7 +27,7 @@ pip install -e .
 ### Using pip (when published)
 
 ```bash
-pip install tag-manager-cli
+pip install -e .
 ```
 
 ## Prerequisites
@@ -82,29 +82,29 @@ The CLI will automatically create a DynamoDB table for configuration storage. En
 
 ```bash
 # Start interactive mode
-tag-manager
+bluearch-aws-tags
 
 # Or explicitly
-tag-manager interactive
+bluearch-aws-tags interactive
 ```
 
 ### Direct Commands
 
 ```bash
 # Analyze costs by tag (CUR-powered)
-tag-manager cost report --tag-key Environment --start 2024-01-01 --end 2024-01-31
+bluearch-aws-tags cost report --tag-key Environment --start 2024-01-01 --end 2024-01-31
 
 # Find untagged resource costs
-tag-manager cost gaps --required-tags Environment,Team,CostCenter
+bluearch-aws-tags cost gaps --required-tags Environment,Team,CostCenter
 
 # Detect cost anomalies
-tag-manager cost anomalies detect --tag-key Team --percent-threshold 30
+bluearch-aws-tags cost anomalies detect --tag-key Team --percent-threshold 30
 
 # Show version
-tag-manager version
+bluearch-aws-tags version
 
 # Use specific AWS profile
-tag-manager --profile my-sso-profile interactive
+bluearch-aws-tags --profile my-sso-profile interactive
 ```
 
 ## Project Structure
@@ -247,12 +247,12 @@ Your AWS profile needs the following permissions:
 
 ```bash
 # Interactive mode
-tag-manager
+bluearch-aws-tags
 # Select option 1: FinOps Cost Analysis
 # Select option 1: Generate chargeback report
 
 # Direct command
-tag-manager cost report \
+bluearch-aws-tags cost report \
   --tag-key Environment \
   --start 2024-01-01 \
   --end 2024-01-31 \
@@ -263,7 +263,7 @@ tag-manager cost report \
 
 ```bash
 # Interactive mode
-tag-manager
+bluearch-aws-tags
 # Select option 2: Resource Organization
 # Select option 2: List untagged resources
 ```
@@ -274,7 +274,7 @@ tag-manager
 
 ```bash
 git clone <repository-url>
-cd tag-manager-cli
+cd bluearch-aws-tags
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -335,5 +335,5 @@ For issues and questions:
 Enable verbose logging:
 ```bash
 export TAG_MANAGER_DEBUG=1
-tag-manager interactive
+bluearch-aws-tags interactive
 ```

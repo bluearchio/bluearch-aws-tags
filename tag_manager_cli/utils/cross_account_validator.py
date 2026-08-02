@@ -469,7 +469,7 @@ class CrossAccountValidator:
             console.print("\n[bold]Next Steps:[/bold]")
             console.print("1. Review the failed checks above")
             console.print("2. Follow the suggested solutions")
-            console.print("3. Run 'tag-manager cross-account setup --validate-only' to re-check")
+            console.print("3. Run 'bluearch-aws-tags cross-account setup --validate-only' to re-check")
 
     def get_validation_summary(self) -> Dict:
         """Get validation summary for programmatic use"""

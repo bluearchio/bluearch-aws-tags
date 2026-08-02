@@ -255,7 +255,7 @@ def list(
             failed_access = [a for a in accounts if a.status.value == 'ACTIVE' and not a.role_configured]
             if failed_access:
                 console.print(f"\n[yellow]Found {len(failed_access)} accounts without role access.[/yellow]")
-                console.print("Run 'tag-manager accounts setup' to deploy the role to these accounts.")
+                console.print("Run 'bluearch-aws-tags accounts setup' to deploy the role to these accounts.")
 
     except Exception as e:
         console.print(f"[red]Failed to list accounts: {str(e)}[/red]")
@@ -377,17 +377,17 @@ def test_access(
             if not setup_guardrails.check_stackset_exists():
                 console.print("\n[bold red]No CloudFormation StackSet Found![/bold red]")
                 console.print("\nYou need to deploy the infrastructure first:")
-                console.print("  [green]1.[/green] Run: [cyan]tag-manager accounts setup[/cyan]")
+                console.print("  [green]1.[/green] Run: [cyan]bluearch-aws-tags accounts setup[/cyan]")
                 console.print("     This will deploy the BlueArchRole to all accounts")
                 console.print("  [green]2.[/green] Wait 2-5 minutes for deployment to complete")
-                console.print("  [green]3.[/green] Run: [cyan]tag-manager accounts test-access[/cyan]")
+                console.print("  [green]3.[/green] Run: [cyan]bluearch-aws-tags accounts test-access[/cyan]")
                 console.print("     To verify the roles are working\n")
             else:
                 console.print("\n[yellow]For failed accounts:[/yellow]")
                 console.print("  1. The StackSet exists but these accounts don't have access")
                 console.print("  2. Check if these are new accounts added after initial setup")
-                console.print("  3. Run 'tag-manager accounts setup' to update deployment")
-                console.print("  4. Or run 'tag-manager accounts diagnose ACCOUNT_ID' for details")
+                console.print("  3. Run 'bluearch-aws-tags accounts setup' to update deployment")
+                console.print("  4. Or run 'bluearch-aws-tags accounts diagnose ACCOUNT_ID' for details")
 
     except Exception as e:
         console.print(f"[red]Failed to test access: {str(e)}[/red]")
@@ -545,10 +545,10 @@ def diagnose(
                         diagnostics.append(("  ", f"Reason: {instance['StatusReason']}"))
             else:
                 diagnostics.append(("[yellow]⚠[/yellow]", "No StackSet instance found for this account"))
-                diagnostics.append(("  ", "Run 'tag-manager accounts setup' to deploy"))
+                diagnostics.append(("  ", "Run 'bluearch-aws-tags accounts setup' to deploy"))
         except ClientError as e:
             if e.response['Error']['Code'] == 'StackSetNotFoundException':
-                diagnostics.append(("[red]✗[/red]", "StackSet not found - run 'tag-manager accounts setup'"))
+                diagnostics.append(("[red]✗[/red]", "StackSet not found - run 'bluearch-aws-tags accounts setup'"))
             else:
                 diagnostics.append(("[yellow]⚠[/yellow]", f"Could not check StackSet: {str(e)}"))
 
@@ -565,7 +565,7 @@ def diagnose(
     if account and account.get('Status') == 'SUSPENDED':
         console.print("  • Account is suspended - contact AWS Support")
     elif not any("[green]✓[/green]" in d[0] and "assumed role" in d[1] for d in diagnostics):
-        console.print("  • Run 'tag-manager accounts setup' to deploy the role")
+        console.print("  • Run 'bluearch-aws-tags accounts setup' to deploy the role")
         console.print("  • Check Service Control Policies (SCPs) that might block deployment")
         console.print("  • Verify you have required permissions in your account")
 
@@ -836,9 +836,9 @@ def show_enabled():
     if not enabled_accounts:
         console.print("[yellow]No accounts are currently enabled for scanning[/yellow]")
         console.print("\nEnable accounts with:")
-        console.print("  • 'tag-manager accounts enable --accounts 123456789012'")
-        console.print("  • 'tag-manager accounts enable --ou ou-xxxx-xxxxxxxx'")
-        console.print("  • 'tag-manager accounts enable --all'")
+        console.print("  • 'bluearch-aws-tags accounts enable --accounts 123456789012'")
+        console.print("  • 'bluearch-aws-tags accounts enable --ou ou-xxxx-xxxxxxxx'")
+        console.print("  • 'bluearch-aws-tags accounts enable --all'")
         return
 
     # Get account details

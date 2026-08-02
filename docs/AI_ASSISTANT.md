@@ -77,13 +77,13 @@ No manual console work needed!
 Start a conversational session:
 
 ```bash
-tag-manager ask chat
+bluearch-aws-tags ask chat
 ```
 
 With specific model:
 
 ```bash
-tag-manager ask chat --model anthropic.claude-haiku-4-5-20251001-v1:0
+bluearch-aws-tags ask chat --model anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
 ### Single Question Mode
@@ -91,15 +91,15 @@ tag-manager ask chat --model anthropic.claude-haiku-4-5-20251001-v1:0
 Ask one question and exit:
 
 ```bash
-tag-manager ask question "What EC2 instances are running?"
-tag-manager ask question "Show me my costs last month"
-tag-manager ask question "Which resources are missing tags?"
+bluearch-aws-tags ask question "What EC2 instances are running?"
+bluearch-aws-tags ask question "Show me my costs last month"
+bluearch-aws-tags ask question "Which resources are missing tags?"
 ```
 
 ### List Available Models
 
 ```bash
-tag-manager ask models
+bluearch-aws-tags ask models
 ```
 
 ### Enable Model Access (Manual)
@@ -107,10 +107,10 @@ tag-manager ask models
 If you want to enable access without asking a question first:
 
 ```bash
-tag-manager ask enable-access
+bluearch-aws-tags ask enable-access
 
 # Or for a specific model
-tag-manager ask enable-access --model us.anthropic.claude-haiku-4-5-20251001-v1:0
+bluearch-aws-tags ask enable-access --model us.anthropic.claude-haiku-4-5-20251001-v1:0
 ```
 
 This automatically:
@@ -198,7 +198,7 @@ This automatically:
 
 ```bash
 # Just try using it - automatic setup if needed!
-tag-manager ask question "What EC2 instances do I have?"
+bluearch-aws-tags ask question "What EC2 instances do I have?"
 
 # The assistant will:
 # 1. Detect if access is needed
@@ -211,13 +211,13 @@ tag-manager ask question "What EC2 instances do I have?"
 
 ```bash
 # Manually enable access first
-tag-manager ask enable-access
+bluearch-aws-tags ask enable-access
 
 # Check current access status
-tag-manager ask check-access
+bluearch-aws-tags ask check-access
 
 # View manual setup instructions
-tag-manager ask setup-bedrock
+bluearch-aws-tags ask setup-bedrock
 ```
 
 ### 2. IAM Permissions
@@ -271,7 +271,7 @@ Bedrock must be available in your region. Common regions:
 Specify region:
 
 ```bash
-tag-manager ask chat --region us-east-1
+bluearch-aws-tags ask chat --region us-east-1
 ```
 
 ## Pricing
@@ -344,7 +344,7 @@ Then register it in `get_tools_schema()` and `execute_tool()`.
 
 **Manual check (optional):**
 ```bash
-tag-manager ask check-access
+bluearch-aws-tags ask check-access
 ```
 
 **Solution:**
@@ -383,7 +383,7 @@ tag-manager ask check-access
 ### Example 1: Quick Resource Check
 
 ```bash
-$ tag-manager ask question "How many EC2 instances are running?"
+$ bluearch-aws-tags ask question "How many EC2 instances are running?"
 
 Answer:
 You currently have 5 EC2 instances running across your account:
@@ -396,7 +396,7 @@ All instances are healthy and operational.
 ### Example 2: Cost Analysis
 
 ```bash
-$ tag-manager ask question "What were my top 3 costs last month?"
+$ bluearch-aws-tags ask question "What were my top 3 costs last month?"
 
 Answer:
 Here are your top 3 costs from March 2025:
@@ -414,7 +414,7 @@ Total: $1,814.79
 ### Example 3: Compliance Check
 
 ```bash
-$ tag-manager ask question "Find EC2 instances missing required tags"
+$ bluearch-aws-tags ask question "Find EC2 instances missing required tags"
 
 Answer:
 Found 3 EC2 instances missing required tags:
@@ -437,13 +437,13 @@ The AI assistant integrates seamlessly:
 
 ```bash
 # Use AI to find issues
-tag-manager ask question "Find untagged resources"
+bluearch-aws-tags ask question "Find untagged resources"
 
 # Then fix with Tag Manager
-tag-manager tags apply --interactive
+bluearch-aws-tags tags apply --interactive
 
 # Verify
-tag-manager ask question "Are there still untagged resources?"
+bluearch-aws-tags ask question "Are there still untagged resources?"
 ```
 
 ## Security & Privacy
@@ -457,7 +457,7 @@ tag-manager ask question "Are there still untagged resources?"
 ## Limitations
 
 1. **Database Dependency:** Some queries require Tag Manager's resource database
-   - Run `tag-manager tags discover` first
+   - Run `bluearch-aws-tags tags discover` first
 2. **Permissions:** Answers limited by your AWS SSO role permissions
 3. **Regions:** Some questions may require multi-region access
 4. **Cost Explorer:** Cost queries require Cost Explorer API access

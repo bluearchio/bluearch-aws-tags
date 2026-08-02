@@ -73,9 +73,9 @@ def scan_untagged_resources(
         console.print(f"- Found [red]{len(untagged_resources)}[/red] resources missing required tags")
         console.print(f"- Required tags: [yellow]{', '.join(required_tag_list)}[/yellow]")
         console.print("\n[bold blue]Next Steps:[/bold blue]")
-        console.print("1. Tag resources interactively: [cyan]tag-manager tag interactive[/cyan]")
-        console.print("2. Apply automatic rules: [cyan]tag-manager tag auto-apply[/cyan]")
-        console.print("3. Bulk tag by service: [cyan]tag-manager tag bulk --service ec2[/cyan]")
+        console.print("1. Tag resources interactively: [cyan]bluearch-aws-tags tag interactive[/cyan]")
+        console.print("2. Apply automatic rules: [cyan]bluearch-aws-tags tag auto-apply[/cyan]")
+        console.print("3. Bulk tag by service: [cyan]bluearch-aws-tags tag bulk --service ec2[/cyan]")
     except Exception as exc:
         console.print(f"[red]Error scanning resources: {exc}[/red]")
         raise typer.Exit(1)

@@ -1,9 +1,11 @@
+import hashlib
 import subprocess
 import sys
 import os
 from pathlib import Path
 
 import pytest
+from typer.testing import CliRunner
 
 from tag_manager_cli.commands import update_commands
 from tag_manager_cli.utils import core_client, public_executables
@@ -447,6 +449,36 @@ def test_homebrew_detection_probes_canonical_public_tags_target(
     assert not legacy_marker.exists()
 
 
+def test_homebrew_detection_recognizes_public_version_output(monkeypatch, tmp_path):
+    public = _installer(
+        tmp_path / "public" / "bluearch-aws-tags",
+        tmp_path / "public-ran",
+    )
+    public.write_text(
+        "#!/bin/sh\necho 'bluearch-aws-tags 0.12.4 (production)'\n",
+        encoding="utf-8",
+    )
+    launcher = tmp_path / "bin" / "bluearch-aws-tags"
+    launcher.parent.mkdir()
+    launcher.symlink_to(public)
+    monkeypatch.setattr(
+        update_commands,
+        "_homebrew_tags_locations",
+        lambda: {"homebrew_arm": launcher},
+    )
+
+    result = update_commands.detect_homebrew_installation()
+
+    assert result["installed"] is True
+    assert result["version"] == "bluearch-aws-tags 0.12.4 (production)"
+
+
+def test_doctor_version_parser_recognizes_public_version_output():
+    assert public_executables.public_tags_version_label(
+        "bluearch-aws-tags 0.12.4 (production)\n"
+    ) == "bluearch-aws-tags 0.12.4 (production)"
+
+
 def test_homebrew_manual_remediation_trusts_each_formula_before_upgrade():
     guidance = update_commands.homebrew_update_remediation()
     core_trust = "brew trust --formula bluearchio/tap/bluearch-aws-core"
@@ -459,3 +491,120 @@ def test_homebrew_manual_remediation_trusts_each_formula_before_upgrade():
     assert guidance.index(core_trust) < guidance.index(upgrade)
     assert guidance.index(tags_trust) < guidance.index(upgrade)
     assert "brew trust --tap" not in guidance
+
+
+def test_homebrew_check_fails_visibly_on_nonzero_outdated_command(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    errors = []
+    monkeypatch.setattr(update_commands, "get_updates", lambda **_kwargs: [])
+    monkeypatch.setattr(update_commands, "print_core_requirement", lambda _required: None)
+    monkeypatch.setattr(
+        update_commands,
+        "detect_homebrew_installation",
+        lambda: {"installed": True, "binary_path": "/opt/homebrew/bin/bluearch-aws-tags"},
+    )
+    monkeypatch.setattr(
+        update_commands,
+        "_prepare_homebrew",
+        lambda _formulas: os.fspath(brew),
+    )
+    monkeypatch.setattr(update_commands, "print_error", errors.append)
+    monkeypatch.setattr(
+        update_commands.subprocess,
+        "run",
+        lambda argv, **_kwargs: subprocess.CompletedProcess(
+            argv, 7, stdout="", stderr="tap metadata unavailable"
+        ),
+    )
+
+    result = CliRunner().invoke(update_commands.app, ["--check"])
+
+    assert result.exit_code == 1
+    assert any(
+        "Homebrew update check failed: tap metadata unavailable" in message
+        for message in errors
+    )
+
+
+def test_non_homebrew_linux_update_verifies_installer_before_execution(
+    monkeypatch,
+    tmp_path,
+):
+    installer_bytes = b"#!/usr/bin/env bash\nexit 0\n"
+    digest = hashlib.sha256(installer_bytes).hexdigest()
+    downloads = []
+    calls = []
+
+    def download(url, destination, _size_limit):
+        downloads.append(url)
+        if destination.name == "install-linux.sh":
+            destination.write_bytes(installer_bytes)
+        else:
+            destination.write_text(
+                f"{digest}  install-linux.sh\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(update_commands.sys, "platform", "linux")
+    monkeypatch.setenv("BLUEARCH_DIST_BASE_URL", "https://attacker.invalid")
+    monkeypatch.setattr(update_commands, "_download_release_file", download)
+    monkeypatch.setattr(
+        update_commands,
+        "resolve_exact_executable",
+        lambda candidate, expected: "/bin/bash"
+        if (candidate, expected) == ("/bin/bash", "bash")
+        else None,
+    )
+    monkeypatch.setattr(update_commands, "_curl_install_dir", lambda: tmp_path / "install")
+
+    def run(argv, **kwargs):
+        calls.append((argv, kwargs))
+        assert Path(argv[1]).read_bytes() == installer_bytes
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(update_commands.subprocess, "run", run)
+
+    assert update_commands.perform_verified_linux_update("0.2.6") is True
+    assert downloads == [
+        "https://dist.bluearch.io/releases/bluearch-aws-tags/latest/install-linux.sh",
+        "https://dist.bluearch.io/releases/bluearch-aws-tags/latest/SHA256SUMS",
+    ]
+    assert len(calls) == 1
+    assert calls[0][0][0] == "/bin/bash"
+    assert calls[0][1]["env"]["BLUEARCH_MINIMUM_CORE_VERSION"] == "0.2.6"
+    assert calls[0][1]["env"]["INSTALL_DIR"] == os.fspath(tmp_path / "install")
+    assert calls[0][1]["env"]["BLUEARCH_DIST_BASE_URL"] == "https://dist.bluearch.io"
+
+
+def test_non_homebrew_linux_update_rejects_unverified_installer(
+    monkeypatch,
+    tmp_path,
+):
+    def download(_url, destination, _size_limit):
+        if destination.name == "install-linux.sh":
+            destination.write_bytes(b"#!/bin/sh\nexit 0\n")
+        else:
+            destination.write_text(
+                f"{'0' * 64}  install-linux.sh\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setattr(update_commands.sys, "platform", "linux")
+    monkeypatch.setattr(update_commands, "_download_release_file", download)
+    monkeypatch.setattr(
+        update_commands.subprocess,
+        "run",
+        lambda *_args, **_kwargs: pytest.fail("unverified installer was executed"),
+    )
+
+    assert update_commands.perform_verified_linux_update("0.2.6") is False
+
+
+def test_non_homebrew_macos_update_gives_exact_formula_trust(capsys, monkeypatch):
+    monkeypatch.setattr(update_commands.sys, "platform", "darwin")
+
+    assert update_commands.perform_verified_linux_update("0.2.6") is False
+
+    output = capsys.readouterr().out
+    assert "brew trust --formula bluearchio/tap/bluearch-aws-core" in output
+    assert "brew trust --formula bluearchio/tap/bluearch-aws-tags" in output

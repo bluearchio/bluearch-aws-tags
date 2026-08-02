@@ -135,7 +135,7 @@ The `setup validate` command now includes comprehensive IAM permission checking:
 
 ```bash
 # Run the validation
-tag-manager setup validate
+bluearch-aws-tags setup validate
 
 # Or with Python directly
 python -m tag_manager_cli.main setup validate

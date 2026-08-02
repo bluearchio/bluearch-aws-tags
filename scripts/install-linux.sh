@@ -14,6 +14,8 @@ CORE_BINARY_NAME="bluearch-aws-core"
 CORE_ASSET_NAME="bluearch-aws-core-linux-x86_64.tar.gz"
 CORE_VERSION="${BLUEARCH_CORE_VERSION:-latest}"
 CORE_INSTALL_POLICY="${BLUEARCH_INSTALL_CORE:-missing}"
+DEFAULT_MINIMUM_CORE_VERSION="0.2.6"
+MINIMUM_CORE_VERSION="${BLUEARCH_MINIMUM_CORE_VERSION:-$DEFAULT_MINIMUM_CORE_VERSION}"
 
 log() {
   printf '[bluearch] %s\n' "$*"
@@ -116,18 +118,74 @@ install_release() (
   local extracted_binary="${tmp_dir}/extract/${binary_name}"
   [[ -f "$extracted_binary" && ! -L "$extracted_binary" ]] || fail "Archive did not contain a safe ${binary_name}"
 
+  if [[ "$binary_name" == "$CORE_BINARY_NAME" ]]; then
+    public_core_version_satisfies "$extracted_binary" || \
+      fail "Verified Core release must be ${CORE_BINARY_NAME} >= ${MINIMUM_CORE_VERSION}"
+  fi
+
   mkdir -p "$INSTALL_DIR"
   install -m 0755 "$extracted_binary" "${INSTALL_DIR}/${binary_name}"
   log "Installed ${binary_name} to ${INSTALL_DIR}/${binary_name}"
 )
 
-binary_available() {
-  command -v "$1" >/dev/null 2>&1 || [[ -x "${INSTALL_DIR}/$1" ]]
+canonical_public_core_target() {
+  local candidate="$1"
+  local target
+  [[ -n "$candidate" ]] || return 1
+  target="$(readlink -f -- "$candidate" 2>/dev/null)" || return 1
+  [[ -f "$target" && -x "$target" ]] || return 1
+  [[ "$(basename -- "$target")" == "$CORE_BINARY_NAME" ]] || return 1
+  printf '%s\n' "$target"
+}
+
+extract_semver() {
+  sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1
+}
+
+version_at_least() {
+  local actual="$1"
+  local required="$2"
+  local actual_major actual_minor actual_patch
+  local required_major required_minor required_patch
+  IFS=. read -r actual_major actual_minor actual_patch <<< "$actual"
+  IFS=. read -r required_major required_minor required_patch <<< "$required"
+  [[ "$actual_major" =~ ^[0-9]+$ && "$actual_minor" =~ ^[0-9]+$ && "$actual_patch" =~ ^[0-9]+$ ]] || return 1
+  [[ "$required_major" =~ ^[0-9]+$ && "$required_minor" =~ ^[0-9]+$ && "$required_patch" =~ ^[0-9]+$ ]] || return 1
+  (( 10#$actual_major > 10#$required_major )) ||
+    (( 10#$actual_major == 10#$required_major && 10#$actual_minor > 10#$required_minor )) ||
+    (( 10#$actual_major == 10#$required_major && 10#$actual_minor == 10#$required_minor && 10#$actual_patch >= 10#$required_patch ))
+}
+
+public_core_version_satisfies() {
+  local candidate="$1"
+  local target output version_line version
+  target="$(canonical_public_core_target "$candidate")" || return 1
+  # Only the already-resolved, exact public target is executed. A legacy target
+  # is rejected by basename before this point.
+  output="$("$target" --version 2>/dev/null)" || return 1
+  version_line="${output%%$'\n'*}"
+  [[ "$version_line" == "$CORE_BINARY_NAME "* ]] || return 1
+  version="$(printf '%s\n' "$version_line" | extract_semver)"
+  [[ -n "$version" ]] || return 1
+  version_at_least "$version" "$MINIMUM_CORE_VERSION"
+}
+
+existing_public_core_satisfies() {
+  local candidate=""
+  candidate="$(command -v "$CORE_BINARY_NAME" 2>/dev/null || true)"
+  if [[ -n "$candidate" ]] && public_core_version_satisfies "$candidate"; then
+    return 0
+  fi
+  if [[ -x "${INSTALL_DIR}/${CORE_BINARY_NAME}" ]] && \
+    public_core_version_satisfies "${INSTALL_DIR}/${CORE_BINARY_NAME}"; then
+    return 0
+  fi
+  return 1
 }
 
 case "$(uname -s)" in
   Linux) ;;
-  *) fail "This installer supports Linux only. On macOS, use: brew install bluearchio/tap/bluearch-aws-tags" ;;
+  *) fail "This installer supports Linux only. On macOS run: brew trust --formula bluearchio/tap/bluearch-aws-core; brew trust --formula bluearchio/tap/bluearch-aws-tags; brew install bluearchio/tap/bluearch-aws-tags" ;;
 esac
 
 case "$(uname -m)" in
@@ -139,19 +197,24 @@ require_command curl
 require_command tar
 require_command sha256sum
 require_command install
+require_command readlink
+
+version_at_least "$MINIMUM_CORE_VERSION" "$DEFAULT_MINIMUM_CORE_VERSION" || \
+  fail "BLUEARCH_MINIMUM_CORE_VERSION cannot be lower than ${DEFAULT_MINIMUM_CORE_VERSION}"
 
 case "$CORE_INSTALL_POLICY" in
   always)
     install_release "$CORE_APP_NAME" "$CORE_REPO" "$CORE_VERSION" "$CORE_ASSET_NAME" "$CORE_BINARY_NAME"
     ;;
   missing)
-    if ! binary_available "$CORE_BINARY_NAME"; then
+    if existing_public_core_satisfies; then
+      log "Using existing ${CORE_BINARY_NAME} >= ${MINIMUM_CORE_VERSION}"
+    else
+      log "Existing Core is missing, non-canonical, or older than ${MINIMUM_CORE_VERSION}; installing a verified Core release"
       install_release "$CORE_APP_NAME" "$CORE_REPO" "$CORE_VERSION" "$CORE_ASSET_NAME" "$CORE_BINARY_NAME"
     fi
     ;;
-  skip)
-    ;;
-  *) fail "Invalid BLUEARCH_INSTALL_CORE value: ${CORE_INSTALL_POLICY}. Use missing, always, or skip." ;;
+  *) fail "Invalid BLUEARCH_INSTALL_CORE value: ${CORE_INSTALL_POLICY}. Use missing or always." ;;
 esac
 
 install_release "$APP_NAME" "$REPO" "$VERSION" "$ASSET_NAME" "$BINARY_NAME"
