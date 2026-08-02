@@ -77,6 +77,86 @@ jobs:
                   f"tag/version mismatch: tag={tag} init={init_version} setup={setup_version}"
               )
           PY
+      - name: Validate release credential availability
+        env:
+          MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 || secrets.APPLE_CERTIFICATE_BASE64 || secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD || secrets.MACOS_CERTIFICATE_PWD }}
+          APPLE_API_KEY_P8_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "::error::Missing required release credential: $name"
+              exit 1
+            fi
+          done
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "::error::Missing HOMEBREW_TAP_TOKEN_2"
+            exit 1
+          fi
+
+          tap_access="$(gh api --method GET -H "Accept: application/vnd.github+json" "repos/${HOMEBREW_TAP_REPO}" --jq '[.full_name, (.permissions.push // false), (.allow_auto_merge // false)] | @tsv')"
+          if [[ "$tap_access" != "${HOMEBREW_TAP_REPO}"$'\ttrue\ttrue' ]]; then
+            echo "::error::HOMEBREW_TAP_TOKEN_2 must have push access and ${HOMEBREW_TAP_REPO} must have auto-merge enabled"
+            exit 1
+          fi
+          if ! gh pr list --repo "$HOMEBREW_TAP_REPO" --state open --limit 1 >/dev/null; then
+            echo "::error::HOMEBREW_TAP_TOKEN_2 cannot list pull requests in ${HOMEBREW_TAP_REPO}"
+            exit 1
+          fi
+
+          python3 - <<'PY'
+          import base64
+          import binascii
+          import os
+
+          encoded = "".join(os.environ["MACOS_CERTIFICATE_P12_BASE64"].split())
+          try:
+              decoded = base64.b64decode(encoded, validate=True)
+          except (binascii.Error, ValueError):
+              raise SystemExit("MACOS_CERTIFICATE_P12_BASE64 is not valid base64")
+          if not decoded:
+              raise SystemExit("MACOS_CERTIFICATE_P12_BASE64 decodes to an empty value")
+          PY
+
+          api_notarization_ready=true
+          for name in APPLE_API_KEY_P8_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              api_notarization_ready=false
+            fi
+          done
+          apple_id_notarization_ready=true
+          for name in APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID; do
+            if [[ -z "${!name:-}" ]]; then
+              apple_id_notarization_ready=false
+            fi
+          done
+          if [[ "$api_notarization_ready" != true && "$apple_id_notarization_ready" != true ]]; then
+            echo "::error::Configure a complete notarization credential set"
+            exit 1
+          fi
+          if [[ "$api_notarization_ready" == true ]]; then
+            python3 - <<'PY'
+          import base64
+          import binascii
+          import os
+
+          encoded = "".join(os.environ["APPLE_API_KEY_P8_BASE64"].split())
+          try:
+              decoded = base64.b64decode(encoded, validate=True)
+          except (binascii.Error, ValueError):
+              raise SystemExit("APPLE_API_KEY_P8_BASE64 is not valid base64")
+          if not decoded:
+              raise SystemExit("APPLE_API_KEY_P8_BASE64 decodes to an empty value")
+          PY
+          fi
       - name: Install test dependencies
         shell: bash
         run: |
@@ -137,10 +217,18 @@ jobs:
           test ! -e "$version_home/.tag-manager"
           "$verify_dir/$BINARY_NAME" --help >/dev/null
           "$verify_dir/$BINARY_NAME" discover --help >/dev/null
+      - name: Extract final Linux artifact for SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          sbom_dir="$RUNNER_TEMP/sbom-linux-x86_64"
+          mkdir -p "$sbom_dir"
+          tar --no-same-owner --no-same-permissions -xzf "artifacts/$BINARY_NAME-linux-x86_64.tar.gz" -C "$sbom_dir"
+          test -x "$sbom_dir/$BINARY_NAME"
       - name: Generate final Linux artifact SBOM
         uses: anchore/sbom-action@v0.24.0
         with:
-          path: artifacts/${{ env.BINARY_NAME }}-linux-x86_64.tar.gz
+          path: ${{ runner.temp }}/sbom-linux-x86_64
           format: cyclonedx-json
           output-file: artifacts/${{ env.BINARY_NAME }}-linux-x86_64.cyclonedx.json
           upload-artifact: false
@@ -254,10 +342,18 @@ jobs:
           fi
           expected_version="${RELEASE_TAG#v}"
           bash scripts/verify_macos_artifact.sh "artifacts/$BINARY_NAME-macos-arm64.zip" "$BINARY_NAME" "$expected_version"
+      - name: Extract final macOS artifact for SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+          sbom_dir="$RUNNER_TEMP/sbom-macos-arm64"
+          mkdir -p "$sbom_dir"
+          ditto -x -k "artifacts/$BINARY_NAME-macos-arm64.zip" "$sbom_dir"
+          test -x "$sbom_dir/$BINARY_NAME"
       - name: Generate final macOS artifact SBOM
         uses: anchore/sbom-action@v0.24.0
         with:
-          path: artifacts/${{ env.BINARY_NAME }}-macos-arm64.zip
+          path: ${{ runner.temp }}/sbom-macos-arm64
           format: cyclonedx-json
           output-file: artifacts/${{ env.BINARY_NAME }}-macos-arm64.cyclonedx.json
           upload-artifact: false
