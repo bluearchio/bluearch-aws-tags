@@ -630,12 +630,14 @@ def _display_compliance_summary(
         console.print(table)
         console.print()
         console.print(
-            "[dim]Run 'tags scan' to see detailed non-compliant resources.[/dim]"
+            "[dim]Run 'bluearch-aws-tags policy check-compliance --details' "
+            "to see detailed non-compliant resources.[/dim]"
         )
 
         if not from_org_policy:
             console.print(
-                "[dim]Run 'policy wizard' to set up organization-wide tag policies.[/dim]"
+                "[dim]Run 'bluearch-aws-tags policy wizard' to set up "
+                "organization-wide tag policies.[/dim]"
             )
 
 

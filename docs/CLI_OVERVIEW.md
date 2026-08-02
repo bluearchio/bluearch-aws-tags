@@ -435,4 +435,4 @@ A: It won't appear in expiring lists or be eligible for deletion. You can unprot
 A: No. Deletions are permanent. Always use `--dry-run` first!
 
 **Q: How do I scan multiple AWS accounts?**
-A: Run `bluearch-aws-tags setup multi-accounts` first, then `lifecycle scan` will include all configured accounts.
+A: Run `bluearch-aws-tags setup multi-account --complete` first, then use `bluearch-aws-tags lifecycle scan --multi-account` to include configured accounts.

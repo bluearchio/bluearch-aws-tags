@@ -149,10 +149,11 @@ class TaskTracker:
         tasks["database_maintenance"] = TrackedTask(
             name="database_maintenance",
             display_name="Database Maintenance",
-            description="Optimize database performance and clean old records",
+            description="Core-owned database maintenance",
             staleness_hours=168,  # Weekly
             priority=TaskPriority.LOW,
-            command="database optimize"
+            command=None,
+            function=None,
         )
 
         # Tag compliance check (user runs this manually)
@@ -162,7 +163,7 @@ class TaskTracker:
             description="Check resources for required tags",
             staleness_hours=168,  # Weekly (users run manually)
             priority=TaskPriority.LOW,
-            command=None,  # Users run 'tags scan' manually when needed
+            command=None,  # Use `bluearch-aws-tags policy check-compliance` manually.
             function=None
         )
 

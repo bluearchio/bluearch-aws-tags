@@ -149,3 +149,16 @@ def test_install_errors_use_formula_specific_macos_trust() -> None:
     assert "brew trust --formula bluearchio/tap/bluearch-aws-core" in combined
     assert "brew trust --formula bluearchio/tap/bluearch-aws-tags" in combined
     assert "brew trust bluearchio/tap" not in combined
+
+
+def test_legacy_automation_helper_redirects_to_registered_public_workflow() -> None:
+    script = (ROOT / "scripts" / "setup_automated_tagging.sh").read_text(
+        encoding="utf-8"
+    )
+
+    assert "bluearch-aws-tags lifecycle policies create" in script
+    assert "bluearch-aws-tags lifecycle set-ttl --dry-run" in script
+    assert "bluearch-aws-tags policy check-compliance --details" in script
+    assert "tag_manager_cli.main database " not in script
+    assert "tag_manager_cli.main tagging " not in script
+    assert "tag_manager_cli.main workers " not in script

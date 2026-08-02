@@ -164,15 +164,15 @@ python -m tag_manager_cli.main setup validate
 ┏━━━━━━━━━━━━━━━━━━┳━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
 ┃ Component        ┃ Status ┃ Details                                     ┃
 ┡━━━━━━━━━━━━━━━━━━╇━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ IAM Permissions  │ ERROR  │ Missing 5 permissions affecting: tags       │
-│                  │        │ apply, ai assistant, policy create          │
+│ IAM Permissions  │ ERROR  │ Missing 5 permissions affecting: lifecycle  │
+│                  │        │ set-ttl, ai assistant, policy create        │
 └──────────────────┴────────┴─────────────────────────────────────────────┘
 
 Missing IAM Permissions:
   ai assistant:
     - bedrock:Converse
     - bedrock:ConverseStream
-  tags apply:
+  lifecycle set-ttl:
     - tag:TagResources
     - s3:PutBucketTagging
   policy create:

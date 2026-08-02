@@ -17,266 +17,261 @@ from .console_safe import safe_print
 class CommandSuggestions:
     """Manages contextual command suggestions and next-step guidance."""
 
+    PUBLIC_COMMAND_ROOTS = frozenset(
+        {
+            "--help",
+            "--version",
+            "ask",
+            "cost",
+            "discover",
+            "interactive",
+            "lifecycle",
+            "policy",
+            "setup",
+            "uninstall",
+            "update",
+            "web",
+        }
+    )
+
     def __init__(self):
         self.console = Console()
 
-        # Define suggestion mappings for different contexts
+        # Every command below is a suffix that the renderer prefixes with the
+        # public executable name. Keep the first token on the registered public
+        # CLI surface; dormant legacy contexts are intentionally redirected to
+        # the supported lifecycle, policy, discovery, setup, and cost flows.
         self.suggestions_map = {
-            # Tags commands
             "tags.scan": [
-                {"cmd": "tags apply --interactive", "desc": "Start tagging resources interactively"},
-                {"cmd": "tags bulk --service ec2", "desc": "Bulk tag EC2 instances"},
-                {"cmd": "tags rules create", "desc": "Create automated tagging rules"},
-                {"cmd": "tags report compliance", "desc": "Generate compliance report"}
+                {"cmd": "lifecycle wizard", "desc": "Start the guided lifecycle and tagging workflow"},
+                {"cmd": "lifecycle set-ttl --dry-run", "desc": "Preview supported TTL tag changes"},
+                {"cmd": "lifecycle policies create", "desc": "Create a lifecycle policy"},
+                {"cmd": "policy check-compliance --details", "desc": "Review organization tag-policy compliance"},
             ],
             "tags.scan.no_untagged": [
-                {"cmd": "tags report compliance", "desc": "Generate full compliance report"},
-                {"cmd": "tags lifecycle list", "desc": "Review resource lifecycle policies"},
-                {"cmd": "tags rules list", "desc": "View your automation rules"},
-                {"cmd": "discover all", "desc": "Update resource discovery"}
+                {"cmd": "policy check-compliance --details", "desc": "Generate a detailed compliance view"},
+                {"cmd": "lifecycle policies list", "desc": "Review lifecycle policies"},
+                {"cmd": "lifecycle review", "desc": "Review resources with active TTLs"},
+                {"cmd": "discover all", "desc": "Refresh resource discovery"},
             ],
             "tags.apply.success": [
-                {"cmd": "tags scan", "desc": "Find more untagged resources"},
-                {"cmd": "tags report audit --last-hours 1", "desc": "Review recent tagging changes"},
-                {"cmd": "tags rules create", "desc": "Automate similar tagging"},
-                {"cmd": "tags status", "desc": "Check tagging system status"}
+                {"cmd": "lifecycle scan", "desc": "Verify current resource lifecycle state"},
+                {"cmd": "lifecycle review", "desc": "Review resources with TTLs"},
+                {"cmd": "policy check-compliance --details", "desc": "Check tag-policy compliance"},
+                {"cmd": "setup validate", "desc": "Validate the public runtime"},
             ],
             "tags.bulk.complete": [
-                {"cmd": "tags scan", "desc": "Verify remaining untagged resources"},
-                {"cmd": "tags report compliance", "desc": "Check compliance after bulk tagging"},
-                {"cmd": "tags lifecycle set-ttl --ttl-days 30", "desc": "Set resource lifecycles"},
-                {"cmd": "tags apply --auto", "desc": "Apply automation rules"}
+                {"cmd": "lifecycle scan", "desc": "Verify current lifecycle state"},
+                {"cmd": "policy check-compliance --details", "desc": "Check compliance after changes"},
+                {"cmd": "lifecycle set-ttl --ttl-days 30 --dry-run", "desc": "Preview 30-day TTL changes"},
+                {"cmd": "lifecycle wizard", "desc": "Continue with the guided workflow"},
             ],
             "tags.rules.created": [
-                {"cmd": "tags apply --auto", "desc": "Apply your new rules immediately"},
-                {"cmd": "tags rules test --dry-run", "desc": "Test rules before applying"},
-                {"cmd": "tags rules list", "desc": "Review all your rules"},
-                {"cmd": "tags scan", "desc": "Find resources for rules"}
+                {"cmd": "lifecycle set-ttl --dry-run", "desc": "Preview the policy before applying TTL tags"},
+                {"cmd": "lifecycle policies list", "desc": "Review lifecycle policies"},
+                {"cmd": "lifecycle scan", "desc": "Find resources matching policies"},
+                {"cmd": "lifecycle wizard", "desc": "Continue with the guided workflow"},
             ],
             "tags.rules.list": [
-                {"cmd": "tags apply --auto", "desc": "Apply enabled rules to resources"},
-                {"cmd": "tags rules enable <rule-name>", "desc": "Enable specific rules"},
-                {"cmd": "tags rules create", "desc": "Create new tagging rules"},
-                {"cmd": "tags report automation", "desc": "View automation effectiveness"}
+                {"cmd": "lifecycle policies list", "desc": "Review lifecycle policies"},
+                {"cmd": "lifecycle policies create", "desc": "Create a lifecycle policy"},
+                {"cmd": "lifecycle set-ttl --dry-run", "desc": "Preview policy-driven TTL changes"},
+                {"cmd": "lifecycle scan", "desc": "Find matching resources"},
             ],
             "tags.lifecycle.set": [
-                {"cmd": "tags lifecycle list", "desc": "View all lifecycle policies"},
-                {"cmd": "tags lifecycle cleanup --dry-run", "desc": "Preview cleanup actions"},
-                {"cmd": "tags report lifecycle", "desc": "Generate lifecycle report"},
-                {"cmd": "tags scan --min-age 720", "desc": "Find old untagged resources"}
+                {"cmd": "lifecycle policies list", "desc": "View lifecycle policies"},
+                {"cmd": "lifecycle delete --dry-run", "desc": "Preview expired-resource cleanup"},
+                {"cmd": "lifecycle review", "desc": "Review resource lifecycle state"},
+                {"cmd": "lifecycle scan --expiring 30", "desc": "Find resources expiring within 30 days"},
             ],
             "tags.report.compliance": [
-                {"cmd": "tags scan", "desc": "Find and fix non-compliant resources"},
-                {"cmd": "tags apply --interactive", "desc": "Fix compliance issues"},
-                {"cmd": "tags bulk --service <service>", "desc": "Fix specific service compliance"},
-                {"cmd": "cost report --tag-key CostCenter", "desc": "Analyze costs by tags"}
+                {"cmd": "policy check-compliance --details", "desc": "Inspect non-compliant resources"},
+                {"cmd": "lifecycle wizard", "desc": "Use the supported guided remediation flow"},
+                {"cmd": "lifecycle set-ttl --noncompliant --dry-run", "desc": "Preview TTL changes for non-compliant resources"},
+                {"cmd": "cost report --tag-key CostCenter", "desc": "Analyze costs by tags"},
             ],
             "tags.status": [
-                {"cmd": "workers health", "desc": "Check worker health status"},
-                {"cmd": "tags scan", "desc": "Find resources to tag"},
-                {"cmd": "tags report audit", "desc": "View recent tagging activity"},
-                {"cmd": "tags apply --auto", "desc": "Run automated tagging"}
+                {"cmd": "setup validate", "desc": "Check public runtime health"},
+                {"cmd": "lifecycle scan", "desc": "Inspect lifecycle resources"},
+                {"cmd": "lifecycle review", "desc": "Review current TTL decisions"},
+                {"cmd": "discover all", "desc": "Refresh resource inventory"},
             ],
-
-            # Worker commands
             "workers.discover.complete": [
-                {"cmd": "workers list", "desc": "View all discovered resources"},
-                {"cmd": "tags scan", "desc": "Find untagged among discovered resources"},
-                {"cmd": "tags apply --interactive", "desc": "Start tagging discovered resources"},
-                {"cmd": "workers status", "desc": "Check discovery status"}
+                {"cmd": "lifecycle scan", "desc": "View discovered lifecycle resources"},
+                {"cmd": "policy check-compliance --details", "desc": "Check organization tag compliance"},
+                {"cmd": "lifecycle wizard", "desc": "Start the guided workflow"},
+                {"cmd": "discover all", "desc": "Refresh resource discovery"},
             ],
             "workers.discover.failed": [
-                {"cmd": "system validate", "desc": "Check AWS configuration"},
                 {"cmd": "setup validate", "desc": "Validate AWS connectivity"},
-                {"cmd": "workers health --auto-fix", "desc": "Try automatic fixes"},
-                {"cmd": "setup wizard", "desc": "Reconfigure AWS access"}
+                {"cmd": "setup doctor", "desc": "Diagnose the installation"},
+                {"cmd": "setup wizard", "desc": "Reconfigure AWS access"},
+                {"cmd": "discover all", "desc": "Retry public resource discovery"},
             ],
             "workers.start.success": [
-                {"cmd": "workers status", "desc": "Verify workers are running"},
-                {"cmd": "workers health", "desc": "Check worker health"},
-                {"cmd": "tags apply --auto", "desc": "Enable automated tagging"}
+                {"cmd": "setup validate", "desc": "Verify runtime health"},
+                {"cmd": "discover all", "desc": "Refresh resource inventory"},
+                {"cmd": "lifecycle scan", "desc": "Scan lifecycle resources"},
             ],
             "workers.stop.success": [
-                {"cmd": "workers status", "desc": "Verify workers stopped"},
-                {"cmd": "docker stop", "desc": "Stop Docker services too"},
-                {"cmd": "service stop", "desc": "Stop system service"}
+                {"cmd": "setup validate", "desc": "Verify runtime health"},
+                {"cmd": "web status", "desc": "Check the managed web dashboard"},
+                {"cmd": "lifecycle scan", "desc": "Continue with synchronous lifecycle operations"},
             ],
             "workers.status.healthy": [
                 {"cmd": "lifecycle scan", "desc": "Scan resources"},
-                {"cmd": "lifecycle set-ttl", "desc": "Apply TTL to resources"},
-                {"cmd": "lifecycle review", "desc": "Review expiring resources"}
+                {"cmd": "lifecycle set-ttl --dry-run", "desc": "Preview TTL changes"},
+                {"cmd": "lifecycle review", "desc": "Review expiring resources"},
             ],
             "workers.status.issues": [
-                {"cmd": "workers health --auto-fix", "desc": "Fix issues automatically"},
-                {"cmd": "workers restart", "desc": "Restart worker processes"},
                 {"cmd": "setup validate", "desc": "Run system validation"},
-                {"cmd": "docker restart", "desc": "Restart Docker services"}
+                {"cmd": "setup doctor", "desc": "Diagnose installation issues"},
+                {"cmd": "setup wizard", "desc": "Repair configuration"},
             ],
             "workers.health.fixed": [
-                {"cmd": "workers status", "desc": "Verify everything is working"},
-                {"cmd": "tags scan", "desc": "Resume tagging operations"},
-                {"cmd": "tags apply --auto", "desc": "Resume automated tagging"}
+                {"cmd": "setup validate", "desc": "Verify everything is working"},
+                {"cmd": "lifecycle scan", "desc": "Resume lifecycle operations"},
+                {"cmd": "lifecycle set-ttl --dry-run", "desc": "Preview supported TTL changes"},
             ],
-
-            # System commands
             "system.validate.success": [
                 {"cmd": "lifecycle scan", "desc": "Scan AWS resources"},
                 {"cmd": "lifecycle wizard", "desc": "Start guided workflow"},
-                {"cmd": "setup wizard", "desc": "Run interactive setup wizard"}
+                {"cmd": "setup wizard", "desc": "Run interactive setup wizard"},
             ],
             "system.validate.failed": [
                 {"cmd": "setup wizard", "desc": "Run guided setup to fix issues"},
-                {"cmd": "system config", "desc": "Review configuration"},
                 {"cmd": "setup validate", "desc": "Run validation checks"},
-                {"cmd": "aws sso login", "desc": "Refresh AWS credentials"}
+                {"cmd": "setup doctor", "desc": "Review installation diagnostics"},
+                {"cmd": "setup aws", "desc": "Reconfigure AWS credentials"},
             ],
             "system.status": [
-                {"cmd": "workers health", "desc": "Check worker health"},
                 {"cmd": "setup validate", "desc": "Run system validation"},
-                {"cmd": "tags status", "desc": "Check tagging status"},
-                {"cmd": "update check", "desc": "Check for updates"}
+                {"cmd": "web status", "desc": "Check the managed dashboard"},
+                {"cmd": "lifecycle scan", "desc": "Check lifecycle resources"},
+                {"cmd": "update --check", "desc": "Check for updates"},
             ],
-
-            # Setup commands
             "setup.wizard.complete": [
                 {"cmd": "setup validate", "desc": "Verify setup completed successfully"},
                 {"cmd": "lifecycle wizard", "desc": "Complete guided lifecycle workflow"},
-                {"cmd": "lifecycle scan", "desc": "Scan and discover resources"}
+                {"cmd": "lifecycle scan", "desc": "Scan and discover resources"},
             ],
             "setup.wizard.skipped_notifications": [
                 {"cmd": "lifecycle scan", "desc": "Scan and discover resources"},
                 {"cmd": "lifecycle wizard", "desc": "Complete guided lifecycle workflow"},
-                {"cmd": "setup validate", "desc": "Verify system health"}
+                {"cmd": "setup validate", "desc": "Verify system health"},
             ],
-
-            # Update commands
             "update.check.available": [
-                {"cmd": "update install", "desc": "Install the latest version"},
-                {"cmd": "update changelog", "desc": "View detailed changes"},
-                {"cmd": "setup validate", "desc": "Check current system health"}
+                {"cmd": "update --yes", "desc": "Install the latest public release"},
+                {"cmd": "update --check", "desc": "Recheck public release metadata"},
+                {"cmd": "setup validate", "desc": "Check current system health"},
             ],
             "update.check.current": [
-                {"cmd": "tags scan", "desc": "Continue with tagging"},
-                {"cmd": "workers status", "desc": "Check system status"},
-                {"cmd": "setup validate", "desc": "Run health check"}
+                {"cmd": "lifecycle scan", "desc": "Continue with lifecycle management"},
+                {"cmd": "web status", "desc": "Check the managed dashboard"},
+                {"cmd": "setup validate", "desc": "Run health checks"},
             ],
             "update.install.success": [
                 {"cmd": "setup validate", "desc": "Verify update successful"},
                 {"cmd": "--version", "desc": "Check new version"},
-                {"cmd": "workers restart", "desc": "Restart workers with new version"},
-                {"cmd": "database migrate", "desc": "Run any new migrations"}
+                {"cmd": "web status", "desc": "Check the Core-managed dashboard"},
+                {"cmd": "lifecycle scan", "desc": "Verify lifecycle operations"},
             ],
-
-            # Docker commands
             "docker.start.success": [
-                {"cmd": "docker status", "desc": "Verify services running"},
-                {"cmd": "workers start", "desc": "Start background workers"},
                 {"cmd": "setup validate", "desc": "Check service health"},
-                {"cmd": "tags scan", "desc": "Begin tagging operations"}
+                {"cmd": "web status", "desc": "Verify the managed dashboard"},
+                {"cmd": "lifecycle scan", "desc": "Begin lifecycle operations"},
             ],
             "docker.stop.success": [
-                {"cmd": "docker status", "desc": "Verify services stopped"},
-                {"cmd": "workers stop", "desc": "Stop workers too"},
-                {"cmd": "service stop", "desc": "Stop system service"}
+                {"cmd": "setup validate", "desc": "Check public runtime health"},
+                {"cmd": "web status", "desc": "Check the managed dashboard"},
             ],
-
-            # Database commands
             "database.migrate.success": [
-                {"cmd": "database status", "desc": "Check migration status"},
-                {"cmd": "workers restart", "desc": "Restart workers after migration"},
+                {"cmd": "setup database", "desc": "Check Core-owned database setup"},
                 {"cmd": "setup validate", "desc": "Verify system health"},
-                {"cmd": "tags scan", "desc": "Resume operations"}
+                {"cmd": "lifecycle scan", "desc": "Resume lifecycle operations"},
             ],
             "database.reset.success": [
-                {"cmd": "database migrate", "desc": "Run migrations on clean database"},
+                {"cmd": "setup database", "desc": "Initialize the Core-owned database"},
                 {"cmd": "lifecycle scan", "desc": "Scan resources"},
-                {"cmd": "setup wizard", "desc": "Reconfigure if needed"}
+                {"cmd": "setup wizard", "desc": "Reconfigure if needed"},
             ],
-
-            # Validation commands (replaces diagnose)
             "setup.validate.success": [
                 {"cmd": "lifecycle scan", "desc": "Scan resources"},
                 {"cmd": "lifecycle wizard", "desc": "Complete guided workflow"},
-                {"cmd": "lifecycle set-ttl", "desc": "Apply TTL to resources"},
-                {"cmd": "lifecycle review", "desc": "Review expiring resources"}
+                {"cmd": "lifecycle set-ttl --dry-run", "desc": "Preview TTL changes"},
+                {"cmd": "lifecycle review", "desc": "Review expiring resources"},
             ],
             "setup.validate.failed": [
-                {"cmd": "workers health --auto-fix", "desc": "Try automatic fixes"},
                 {"cmd": "setup wizard", "desc": "Fix configuration issues"},
-                {"cmd": "aws sso login", "desc": "Refresh AWS credentials"},
-                {"cmd": "system validate", "desc": "Check specific components"}
+                {"cmd": "setup aws", "desc": "Refresh AWS configuration"},
+                {"cmd": "setup doctor", "desc": "Check installation components"},
+                {"cmd": "setup validate", "desc": "Rerun validation"},
             ],
-
-            # First-time user flow
             "first_time": [
                 {"cmd": "setup wizard", "desc": "Complete guided setup (recommended)"},
                 {"cmd": "setup validate", "desc": "Check your AWS configuration"},
                 {"cmd": "interactive", "desc": "Use menu-driven interface"},
-                {"cmd": "--help", "desc": "View all available commands"}
+                {"cmd": "--help", "desc": "View all available commands"},
             ],
-
-            # Interactive mode suggestions
             "interactive.exit": [
-                {"cmd": "tags scan", "desc": "Quick untagged resource scan"},
-                {"cmd": "workers status", "desc": "Check system status"},
-                {"cmd": "setup validate", "desc": "Run system validation"}
+                {"cmd": "policy check-compliance --details", "desc": "Check tag-policy compliance"},
+                {"cmd": "lifecycle scan", "desc": "Review lifecycle resources"},
+                {"cmd": "setup validate", "desc": "Run system validation"},
             ],
-
-            # Cost analysis suggestions
             "cost.analysis.complete": [
-                {"cmd": "tags report cost-allocation", "desc": "Detailed cost allocation report"},
-                {"cmd": "tags apply --tag CostCenter=<value>", "desc": "Apply cost center tags"},
-                {"cmd": "tags lifecycle optimize", "desc": "Optimize resource lifecycles"},
-                {"cmd": "tags scan --required-tags CostCenter", "desc": "Find resources missing cost tags"}
-            ]
+                {"cmd": "cost report --tag-key CostCenter", "desc": "Generate a detailed cost-allocation report"},
+                {"cmd": "cost gaps", "desc": "Find costs that lack allocation tags"},
+                {"cmd": "policy check-compliance --details", "desc": "Check CostCenter tag-policy compliance"},
+                {"cmd": "lifecycle wizard", "desc": "Start the supported lifecycle workflow"},
+            ],
         }
 
         # Define workflow-based suggestions
         self.workflow_suggestions = {
             "initial_setup": [
-                "1. Run 'setup wizard' for complete guided setup",
-                "2. Use 'lifecycle scan' to discover AWS resources",
-                "3. Check with 'setup validate' to verify everything works",
-                "4. Start managing lifecycle with 'lifecycle set-ttl'"
+                "1. Run 'bluearch-aws-tags setup wizard' for complete guided setup",
+                "2. Use 'bluearch-aws-tags discover all' to discover AWS resources",
+                "3. Check with 'bluearch-aws-tags setup validate' to verify everything works",
+                "4. Start with 'bluearch-aws-tags lifecycle wizard'",
             ],
             "daily_operations": [
-                "- 'lifecycle scan' to scan resources",
-                "- 'lifecycle scan --expiring 7' to find expiring resources",
-                "- 'lifecycle review' to review and manage resources",
-                "- 'setup validate' to check system health"
+                "- 'bluearch-aws-tags lifecycle scan' to scan resources",
+                "- 'bluearch-aws-tags lifecycle scan --expiring 7' to find expiring resources",
+                "- 'bluearch-aws-tags lifecycle review' to review and manage resources",
+                "- 'bluearch-aws-tags setup validate' to check system health",
             ],
             "troubleshooting": [
-                "- 'setup validate' for detailed system checks",
-                "- 'workers health --auto-fix' to fix worker issues",
-                "- 'aws sso login' to refresh AWS credentials",
-                "- 'update install' to get the latest fixes"
+                "- 'bluearch-aws-tags setup validate' for detailed system checks",
+                "- 'bluearch-aws-tags setup doctor' for installation diagnostics",
+                "- 'bluearch-aws-tags setup aws' to reconfigure AWS access",
+                "- 'bluearch-aws-tags update --check' to check for fixes",
             ],
             "automation_setup": [
-                "1. 'tags rules create' to define tagging rules",
-                "2. 'tags rules test --dry-run' to test rules",
-                "3. 'tags apply --auto' to apply rules",
-                "4. 'tags report automation' to track effectiveness"
+                "1. 'bluearch-aws-tags lifecycle policies create' to define lifecycle rules",
+                "2. 'bluearch-aws-tags lifecycle scan' to find matching resources",
+                "3. 'bluearch-aws-tags lifecycle set-ttl --dry-run' to preview changes",
+                "4. 'bluearch-aws-tags lifecycle review' to monitor lifecycle state",
             ],
             "compliance_workflow": [
-                "1. 'tags scan --required-tags Environment,Owner,CostCenter'",
-                "2. 'tags apply --interactive' for manual fixes",
-                "3. 'tags bulk --service <service>' for bulk fixes",
-                "4. 'tags report compliance' to verify compliance"
+                "1. 'bluearch-aws-tags policy check-compliance --details' to inspect violations",
+                "2. 'bluearch-aws-tags lifecycle scan --check-compliance' to correlate lifecycle state",
+                "3. 'bluearch-aws-tags lifecycle set-ttl --noncompliant --dry-run' to preview TTL changes",
+                "4. 'bluearch-aws-tags policy check-compliance --details' to verify compliance",
             ],
             "cost_optimization": [
-                "1. 'cost report --tag-key CostCenter' to analyze costs",
-                "2. 'cost gaps' to find untagged resource costs",
-                "3. 'cost anomalies detect' to find cost spikes",
-                "4. 'cost trends' for historical cost analysis"
-            ]
+                "1. 'bluearch-aws-tags cost report --tag-key CostCenter' to analyze costs",
+                "2. 'bluearch-aws-tags cost gaps' to find untagged resource costs",
+                "3. 'bluearch-aws-tags cost anomalies detect' to find cost spikes",
+                "4. 'bluearch-aws-tags cost trends' for historical cost analysis",
+            ],
         }
 
         # Quick tips pool
         self.quick_tips = {
             "general": [
-                "Use 'interactive' mode for a guided menu-driven experience",
-                "Run 'setup validate' regularly to check system health",
-                "Use '--help' with any command for detailed information",
+                "Use 'bluearch-aws-tags interactive' for a guided menu-driven experience",
+                "Run 'bluearch-aws-tags setup validate' regularly to check system health",
+                "Use 'bluearch-aws-tags --help' for detailed command information",
                 "Commands support '--dry-run' to preview changes safely",
                 # "Use TAB completion for faster command entry"
             ],
@@ -288,10 +283,10 @@ class CommandSuggestions:
                 "Required tags help ensure compliance across your organization"
             ],
             "automation": [
-                "Enable workers for background processing and automation",
+                "Use bluearch-aws-core to run shared local services",
                 "Use lifecycle webhook notifications for expiration alerts",
-                "Tagging rules can use regex patterns for flexible matching",
-                "Auto-tagging runs continuously when workers are active"
+                "Create lifecycle policies for repeatable resource rules",
+                "Preview policy-driven TTL changes with --dry-run",
             ],
             "performance": [
                 "Limit scan regions with '--regions' for faster results",
@@ -302,12 +297,20 @@ class CommandSuggestions:
             ],
             "troubleshooting": [
                 "Use '--verbose' flag for detailed error messages",
-                "Check 'setup validate' output for system issues",
-                "AWS SSO sessions expire - use 'aws sso login' to refresh",
-                "'workers health --auto-fix' resolves most common issues",
-                "Service logs are available via 'service logs'"
+                "Check 'bluearch-aws-tags setup validate' output for system issues",
+                "Use 'bluearch-aws-tags setup aws' to refresh AWS configuration",
+                "Run 'bluearch-aws-tags setup doctor' for installation diagnostics",
+                "Check managed dashboard state with 'bluearch-aws-tags web status'",
             ]
         }
+
+    @classmethod
+    def _public_command(cls, command: str) -> str:
+        """Prefix only command suffixes rooted on the registered public CLI."""
+        root = command.split(maxsplit=1)[0] if command.strip() else ""
+        if root not in cls.PUBLIC_COMMAND_ROOTS:
+            raise ValueError(f"Unregistered public command suggestion: {command}")
+        return f"bluearch-aws-tags {command}"
 
     def show_suggestions(self, context: str, data: Optional[Dict[str, Any]] = None,
                         show_workflow: bool = False, workflow_type: Optional[str] = None,
@@ -334,7 +337,7 @@ class CommandSuggestions:
             content_lines.append("")
 
             for i, suggestion in enumerate(suggestions[:4], 1):  # Show top 4 suggestions
-                cmd_text = f"[cyan]bluearch-aws-tags {suggestion['cmd']}[/cyan]"
+                cmd_text = f"[cyan]{self._public_command(suggestion['cmd'])}[/cyan]"
                 desc_text = f"[dim]{suggestion['desc']}[/dim]"
                 content_lines.append(f"  {i}. {cmd_text}")
                 content_lines.append(f"     {desc_text}")
@@ -423,49 +426,49 @@ class CommandSuggestions:
             count = data.get("untagged_count", 0)
             if count > 50:
                 enhanced.insert(0, {
-                    "cmd": f"tags bulk --service {data.get('top_service', 'ec2')}",
-                    "desc": f"Bulk tag {count} untagged resources (start with {data.get('top_service', 'ec2')})"
+                    "cmd": f"lifecycle set-ttl --services {data.get('top_service', 'ec2')} --dry-run",
+                    "desc": f"Preview TTL changes for {count} resources (starting with {data.get('top_service', 'ec2')})"
                 })
             elif count > 0:
                 enhanced.insert(0, {
-                    "cmd": "tags apply --interactive --limit 10",
-                    "desc": f"Interactively tag the {min(count, 10)} highest priority resources"
+                    "cmd": "lifecycle wizard",
+                    "desc": f"Review the {min(count, 10)} highest-priority resources in the guided workflow"
                 })
 
         elif "workers.discover" in context and data.get("discovered_count", 0) > 0:
             enhanced.insert(0, {
-                "cmd": "tags scan --limit 50",
-                "desc": f"Scan the {data.get('discovered_count')} discovered resources for missing tags"
+                "cmd": "lifecycle scan",
+                "desc": f"Scan the {data.get('discovered_count')} discovered resources for lifecycle state"
             })
 
         elif "tags.apply" in context and data.get("resources_tagged", 0) > 0:
             enhanced.insert(0, {
-                "cmd": "tags report audit --last-hours 1",
-                "desc": f"Review the {data.get('resources_tagged')} resources you just tagged"
+                "cmd": "lifecycle review --include-active",
+                "desc": f"Review the {data.get('resources_tagged')} resources you just updated"
             })
 
         elif "system.validate" in context and data.get("failed_checks", []):
             for check in data.get("failed_checks", [])[:1]:  # Show fix for first failed check
                 if "AWS" in check:
                     enhanced.insert(0, {
-                        "cmd": "aws sso login",
-                        "desc": "Refresh your AWS credentials"
+                        "cmd": "setup aws",
+                        "desc": "Refresh your AWS configuration"
                     })
                 elif "Docker" in check:
                     enhanced.insert(0, {
-                        "cmd": "docker start",
-                        "desc": "Start Docker services"
+                        "cmd": "setup doctor",
+                        "desc": "Diagnose the local installation"
                     })
 
         elif "workers.health" in context and data.get("issues_fixed", 0) > 0:
             enhanced.insert(0, {
-                "cmd": "workers status",
+                "cmd": "setup validate",
                 "desc": f"Verify the {data.get('issues_fixed')} issues were resolved"
             })
 
         elif "update.check" in context and data.get("updates_available", 0) > 0:
             enhanced.insert(0, {
-                "cmd": "update install",
+                "cmd": "update --yes",
                 "desc": f"Install {data.get('updates_available')} available update(s)"
             })
 
@@ -499,29 +502,29 @@ class CommandSuggestions:
         """
         recovery_suggestions = {
             "aws_auth": [
-                {"cmd": "system validate", "desc": "Check AWS configuration"},
-                {"cmd": "aws sso login", "desc": "Refresh AWS SSO session"},
-                {"cmd": "setup wizard", "desc": "Reconfigure AWS access"}
+                {"cmd": "setup validate", "desc": "Check AWS configuration"},
+                {"cmd": "setup aws", "desc": "Refresh AWS configuration"},
+                {"cmd": "setup wizard", "desc": "Reconfigure AWS access"},
             ],
             "database": [
-                {"cmd": "database migrate", "desc": "Run database migrations"},
-                {"cmd": "database status", "desc": "Check database status"},
-                {"cmd": "docker restart", "desc": "Restart database container"}
+                {"cmd": "setup database", "desc": "Run Core-owned database setup"},
+                {"cmd": "setup doctor", "desc": "Check database integration"},
+                {"cmd": "setup validate", "desc": "Validate runtime health"},
             ],
             "workers": [
-                {"cmd": "workers health --auto-fix", "desc": "Auto-fix worker issues"},
-                {"cmd": "workers restart", "desc": "Restart worker processes"},
-                {"cmd": "setup validate", "desc": "Check service health"}
+                {"cmd": "setup validate", "desc": "Check service health"},
+                {"cmd": "discover all", "desc": "Refresh resource discovery"},
+                {"cmd": "lifecycle scan", "desc": "Use synchronous lifecycle scanning"},
             ],
             "docker": [
-                {"cmd": "docker start", "desc": "Start Docker services"},
-                {"cmd": "docker status", "desc": "Check Docker status"},
-                {"cmd": "setup validate", "desc": "Check all services"}
+                {"cmd": "setup doctor", "desc": "Diagnose the local installation"},
+                {"cmd": "web status", "desc": "Check the Core-managed dashboard"},
+                {"cmd": "setup validate", "desc": "Check all services"},
             ],
             "permission": [
-                {"cmd": "sudo bluearch-aws-tags <command>", "desc": "Run with elevated privileges"},
-                {"cmd": "system validate", "desc": "Check permissions"},
-                {"cmd": "setup wizard", "desc": "Reconfigure with correct permissions"}
+                {"cmd": "setup validate", "desc": "Check permissions"},
+                {"cmd": "setup doctor", "desc": "Review installation diagnostics"},
+                {"cmd": "setup wizard", "desc": "Reconfigure with correct permissions"},
             ]
         }
 
@@ -539,7 +542,7 @@ class CommandSuggestions:
         ]
 
         for i, suggestion in enumerate(suggestions, 1):
-            cmd_text = f"[cyan]bluearch-aws-tags {suggestion['cmd']}[/cyan]"
+            cmd_text = f"[cyan]{self._public_command(suggestion['cmd'])}[/cyan]"
             desc_text = f"[dim]{suggestion['desc']}[/dim]"
             content_lines.append(f"  {i}. {cmd_text}: {desc_text}")
 

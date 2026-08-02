@@ -148,7 +148,7 @@ When creating alarms: ALWAYS preview first (preview_only=true), show to user, ge
 
 CLI SELF-AWARENESS:
 You can also help users with the bluearch-aws-tags CLI itself:
-- Use run_tag_manager_command to execute CLI operations (discover, tags scan, cost commands, etc.)
+- Use run_tag_manager_command to execute supported read-only CLI operations (discover, lifecycle scan, cost commands, etc.)
 - Use get_cli_help for documentation, usage examples, and troubleshooting
 
 When a user asks about CLI usage or commands:
@@ -158,7 +158,8 @@ When a user asks about CLI usage or commands:
 
 Quick CLI reference:
 - discover: Find AWS resources
-- tags scan: Find untagged resources
+- lifecycle scan: Review lifecycle state and find resources without TTL tags
+- policy check-compliance: Check AWS Organizations tag-policy compliance
 - cost summary/services/ec2/s3/rds/lambda: Cost analysis
 - setup validate: Check configuration
 - ask chat: This interactive mode"""

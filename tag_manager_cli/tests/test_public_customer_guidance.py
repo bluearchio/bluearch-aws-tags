@@ -1,6 +1,7 @@
 from contextlib import nullcontext
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 from types import SimpleNamespace
@@ -8,8 +9,15 @@ from types import SimpleNamespace
 import pytest
 import typer
 
-from tag_manager_cli.commands import ai_commands, cost_commands, lifecycle_commands
+from tag_manager_cli.commands import (
+    account_commands,
+    ai_commands,
+    cost_commands,
+    lifecycle_commands,
+)
+from tag_manager_cli.integrations.aws_assistant import BedrockAWSAssistant
 from tag_manager_cli.integrations.aws_tools import AWSTools
+from tag_manager_cli.modules import discovery as discovery_module
 from tag_manager_cli.modules import multi_account_discovery as multi_account_module
 from tag_manager_cli.modules.finops.cur_setup import CURConfiguration, CURSetup
 from tag_manager_cli.services.slack_notification_service import SlackConfig, SlackNotificationService
@@ -121,6 +129,124 @@ def test_first_time_suggestions_only_advertise_registered_commands():
 
     assert "setup validate" in commands
     assert "system validate" not in commands
+
+
+def test_all_contextual_suggestions_use_registered_public_roots():
+    from tag_manager_cli.main import app
+
+    root_command = typer.main.get_command(app)
+    registered = set(root_command.commands)
+    allowed_root_options = {"--help", "--version"}
+    findings = []
+
+    for context, suggestions in CommandSuggestions().suggestions_map.items():
+        for suggestion in suggestions:
+            command = suggestion["cmd"]
+            parts = shlex.split(command)
+            root = parts[0] if parts else ""
+            if root not in registered and root not in allowed_root_options:
+                findings.append(f"{context}: {command}")
+                continue
+
+            current = root_command
+            for token in parts:
+                if token.startswith("-") or not getattr(current, "commands", None):
+                    break
+                if token not in current.commands:
+                    findings.append(f"{context}: {command} (missing {token})")
+                    break
+                current = current.commands[token]
+
+    assert "tags" not in registered
+    assert CommandSuggestions.PUBLIC_COMMAND_ROOTS <= registered | allowed_root_options
+    assert findings == []
+
+
+def test_suggestion_renderer_rejects_unregistered_bare_namespace():
+    with pytest.raises(ValueError, match="Unregistered public command suggestion"):
+        CommandSuggestions._public_command("tags scan")
+
+
+def test_all_prefixed_suggestion_renderers_emit_only_public_command_roots(capsys):
+    suggestions = CommandSuggestions()
+
+    for context in suggestions.suggestions_map:
+        suggestions.show_suggestions(context, show_tip=False)
+    for error_context in ("aws_auth", "database", "workers", "docker", "permission"):
+        suggestions.show_error_recovery(error_context, "test error")
+
+    output = capsys.readouterr().out
+    for unavailable_root in (
+        "accounts",
+        "database",
+        "docker",
+        "service",
+        "system",
+        "tag",
+        "tags",
+        "tasks",
+        "workers",
+    ):
+        assert f"bluearch-aws-tags {unavailable_root} " not in output
+    assert "bluearch-aws-tags bluearch-aws-tags" not in output
+    assert "bluearch-aws-tags aws " not in output
+
+
+def test_workflow_suggestions_use_fully_qualified_public_commands(capsys):
+    suggestions = CommandSuggestions()
+
+    for workflow_type in suggestions.workflow_suggestions:
+        suggestions.show_suggestions(
+            "not-a-context",
+            show_workflow=True,
+            workflow_type=workflow_type,
+            show_tip=False,
+        )
+
+    output = capsys.readouterr().out
+    assert "bluearch-aws-tags lifecycle" in output
+    assert "bluearch-aws-tags setup" in output
+    assert "'tags " not in output
+    assert "'workers " not in output
+    assert "'system " not in output
+
+
+def test_discovery_compliance_guidance_uses_registered_policy_command(capsys):
+    discovery_module._display_compliance_summary(
+        discovery_module.console,
+        {
+            "required_tags": ["Environment", "Owner"],
+            "from_org_policy": True,
+            "total_compliant": 1,
+            "total_noncompliant": 1,
+            "by_service": {
+                "ec2": {"compliant": 1, "noncompliant": 1},
+            },
+        },
+    )
+
+    output = capsys.readouterr().out
+    assert "bluearch-aws-tags policy check-compliance --details" in output
+    assert "'tags scan'" not in output
+
+
+def test_ai_system_prompt_only_recommends_registered_public_namespaces():
+    assistant = BedrockAWSAssistant(model_id="test-model")
+    prompt = assistant._get_system_prompt()[0]["text"]
+
+    assert "lifecycle scan" in prompt
+    assert "policy check-compliance" in prompt
+    assert "tags scan" not in prompt
+
+
+def test_dormant_account_help_redirects_to_registered_public_workflow(capsys):
+    account_commands.show_accounts_help()
+
+    output = capsys.readouterr().out
+    assert "bluearch-aws-tags setup multi-account --complete" in output
+    assert "bluearch-aws-tags lifecycle wizard" in output
+    assert "tags apply" not in output
+    assert "accounts setup" not in output
 
 
 def test_empty_multi_account_discovery_prints_registered_setup_command(monkeypatch, capsys):

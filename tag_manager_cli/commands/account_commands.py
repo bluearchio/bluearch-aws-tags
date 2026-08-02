@@ -98,11 +98,11 @@ def _enable_stacksets_trusted_access() -> bool:
 
 
 def show_accounts_help():
-    """Show custom formatted help for accounts command."""
+    """Redirect dormant account help to the registered setup workflow."""
     console.print("\n[bold cyan]AWS Cross-Account Management[/bold cyan] - Configure multi-account operations\n")
 
-    console.print("[bold green]✨ ONE-COMMAND SETUP[/bold green] (Recommended):")
-    console.print("  [cyan]accounts setup --complete[/cyan]\n")
+    console.print("[bold green]ONE-COMMAND SETUP[/bold green] (Recommended):")
+    console.print("  [cyan]bluearch-aws-tags setup multi-account --complete[/cyan]\n")
     console.print("  This single command will:")
     console.print("    1. Deploy BlueArchRole to all accounts")
     console.print("    2. Test access to verify deployment")
@@ -111,25 +111,21 @@ def show_accounts_help():
     console.print("  After this, you're ready for all multi-account operations!\n")
 
     console.print("[bold yellow]MANUAL SETUP[/bold yellow] (If you prefer step-by-step control):")
-    console.print("[dim]Step 1: Infrastructure[/dim]")
-    console.print("- [cyan]accounts setup[/cyan]           - Deploy BlueArchRole to all accounts")
-    console.print("- [cyan]accounts test-access[/cyan]     - Verify role deployment worked")
-    console.print("- [cyan]accounts list[/cyan]            - List all Organization accounts")
-    console.print("[dim]Step 2: Enable Accounts[/dim]")
-    console.print("- [cyan]accounts enable --all[/cyan]    - Enable all accounts")
-    console.print("- [cyan]accounts enable --accounts ID1,ID2[/cyan] - Specific accounts")
-    console.print("- [cyan]accounts enable --ou ou-xxx[/cyan]        - All accounts in OU\n")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account --validate-only[/cyan] - Validate prerequisites")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account[/cyan] - Guided deployment")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account --accounts ID1,ID2[/cyan] - Target accounts")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account --ous ou-xxx[/cyan] - Target an OU\n")
 
     console.print("[bold magenta]AFTER SETUP[/bold magenta]:")
-    console.print("- [green]discover --multi-account[/green]      - Discover resources across accounts")
-    console.print("- [green]cost report --tag-key Team[/green]    - Analyze costs by tag")
-    console.print("- [green]tags apply --multi-account[/green]    - Apply tags across accounts\n")
+    console.print("- [green]bluearch-aws-tags discover all --multi-account[/green] - Discover resources across accounts")
+    console.print("- [green]bluearch-aws-tags cost accounts[/green] - Analyze costs by account")
+    console.print("- [green]bluearch-aws-tags lifecycle wizard[/green] - Start the supported lifecycle workflow\n")
 
     console.print("[bold cyan]MAINTENANCE[/bold cyan]:")
-    console.print("- [cyan]accounts show-enabled[/cyan]    - View which accounts are enabled")
-    console.print("- [cyan]accounts disable[/cyan]         - Disable accounts from scanning")
-    console.print("- [cyan]accounts diagnose ID[/cyan]     - Debug specific account issues")
-    console.print("- [cyan]accounts rollback[/cyan]        - Remove cross-account infrastructure\n")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account --validate-only[/cyan] - Recheck prerequisites")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account --update[/cyan] - Update deployed roles")
+    console.print("- [cyan]bluearch-aws-tags setup doctor[/cyan] - Diagnose installation issues")
+    console.print("- [cyan]bluearch-aws-tags setup multi-account --remove[/cyan] - Remove cross-account infrastructure\n")
 
     console.print("[bold blue]ARCHITECTURE[/bold blue]:")
     console.print("- Uses CloudFormation StackSets for role deployment")
@@ -137,7 +133,7 @@ def show_accounts_help():
     console.print("- Hybrid state: DynamoDB (centralized) + SQLite (local)")
     console.print("- Automatic fallback to local storage when offline\n")
 
-    console.print("For detailed command help: [cyan]accounts [COMMAND] --help[/cyan]")
+    console.print("For detailed command help: [cyan]bluearch-aws-tags setup multi-account --help[/cyan]")
 
 
 @app.callback(invoke_without_command=True)
@@ -451,7 +447,8 @@ def cleanup_orphans(
     The orphaned stacks contain BlueArchRole and related IAM resources that
     block new deployments.
 
-    This command requires the current StackSet to be created first (run 'accounts setup').
+    This command requires the current StackSet to be created first with
+    `bluearch-aws-tags setup multi-account`.
     It will:
     1. Find orphaned stacks matching 'StackSet-BlueArchCLI-CrossAccount-Infrastructure-*'
     2. Import them into the current StackSet

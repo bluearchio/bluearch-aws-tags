@@ -1902,7 +1902,7 @@ bluearch-aws-tags <command>
         if not is_allowed:
             return {
                 'error': f"Command not allowed: '{command}'",
-                'message': 'Only read-only commands are permitted. Blocked commands include: tags apply, account setup, update',
+                'message': 'Only registered read-only public commands are permitted; mutation and update operations are blocked.',
                 'allowed_commands': list(cls.ALLOWED_CLI_COMMANDS)
             }
 
