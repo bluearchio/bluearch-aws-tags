@@ -14,10 +14,17 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_WORKFLOW = ROOT / ".github" / "workflows" / "development-binaries.yml"
+QUALITY_WORKFLOW = ROOT / ".github" / "workflows" / "development-quality.yml"
 
 
 def _workflow() -> dict:
     return yaml.load(WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+
+
+def _quality_workflow() -> dict:
+    return yaml.load(
+        QUALITY_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+    )
 
 
 def _run_text(job: dict) -> str:
@@ -43,6 +50,27 @@ def test_release_graph_verifies_tag_and_main_before_builds() -> None:
     assert "origin/main" in verify_commands
     assert "tag_manager_cli/__init__.py" in verify_commands
     assert "pytest" in verify_commands
+
+
+def test_quality_lint_supports_artifact_metadata_permission() -> None:
+    lint_job = _quality_workflow()["jobs"]["workflow-and-shell-lint"]
+    setup_go = next(
+        step for step in lint_job["steps"] if step.get("uses") == "actions/setup-go@v5"
+    )
+
+    assert setup_go["with"]["go-version"] == "1.24"
+    assert "actionlint/cmd/actionlint@v1.7.10" in _run_text(lint_job)
+    assert _workflow()["jobs"]["publish"]["permissions"]["artifact-metadata"] == "write"
+
+
+def test_dependency_audit_and_builds_require_fixed_setuptools() -> None:
+    audit_job = _quality_workflow()["jobs"]["dependency-audit"]
+    audit_commands = _run_text(audit_job)
+
+    assert 'python -m pip install -U pip "setuptools>=83"' in audit_commands
+    for filename in ("build-requirements.txt", "build-requirements-macos.txt"):
+        requirements = (ROOT / filename).read_text(encoding="utf-8").splitlines()
+        assert "setuptools>=83" in requirements
 
 
 def test_release_gate_proves_an_immutable_tag_ref_at_checked_out_main() -> None:
