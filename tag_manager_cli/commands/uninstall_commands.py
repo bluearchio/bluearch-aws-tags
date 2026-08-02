@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import subprocess
 import typer
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -13,6 +14,7 @@ from rich.prompt import Confirm
 from ..utils.core_client import request_core
 from ..utils.display_utils import print_safe, print_success, print_warning, print_error
 from ..utils.error_handlers import handle_aws_errors
+from ..utils.public_executables import PUBLIC_TAGS_FORMULA, resolve_homebrew_executable
 
 # AWS credential validation result
 _aws_credentials_valid = None
@@ -459,6 +461,94 @@ def _is_public_tags_executable(path: Path) -> bool:
         return False
 
 
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _looks_like_homebrew_cellar_target(path: Path) -> bool:
+    parts = path.parts
+    return any(
+        part == "Cellar"
+        and index + 1 < len(parts)
+        and parts[index + 1] == PUBLIC_TAGS_EXECUTABLE
+        for index, part in enumerate(parts)
+    )
+
+
+def _homebrew_binary_owner(path: Path) -> tuple[bool, str | None]:
+    """Return whether a public launcher belongs to Homebrew and its safe brew."""
+    try:
+        target = path.resolve(strict=True)
+    except OSError:
+        return False, None
+
+    brew = resolve_homebrew_executable()
+    if brew is not None:
+        try:
+            result = subprocess.run(
+                [brew, "--cellar"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except (OSError, subprocess.SubprocessError):
+            result = None
+        if result is not None and result.returncode == 0:
+            lines = [line.strip() for line in result.stdout.splitlines() if line.strip()]
+            if len(lines) == 1 and Path(lines[0]).is_absolute():
+                formula_root = Path(lines[0]) / PUBLIC_TAGS_EXECUTABLE
+                if _is_within(target, formula_root):
+                    return True, brew
+
+    # Fail safely if Homebrew itself is unavailable or could not report its
+    # Cellar. A Cellar-owned launcher must never be unlinked directly.
+    if _looks_like_homebrew_cellar_target(target):
+        return True, brew
+    return False, None
+
+
+def _remove_public_binary(path: Path) -> tuple[bool, str]:
+    """Remove a manual public launcher or uninstall its exact Homebrew formula."""
+    if not _is_public_tags_executable(path):
+        return False, f"Not deleting non-public or legacy launcher: {path}"
+
+    homebrew_managed, brew = _homebrew_binary_owner(path)
+    if homebrew_managed:
+        if brew is None:
+            return False, "Homebrew owns this launcher, but canonical brew is unavailable."
+        try:
+            trust = subprocess.run(
+                [brew, "trust", "--formula", PUBLIC_TAGS_FORMULA],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if trust.returncode != 0:
+                detail = (trust.stderr or trust.stdout or "unknown error").strip()
+                return False, f"Exact Tags formula trust failed: {detail}"
+            uninstall_result = subprocess.run(
+                [brew, "uninstall", PUBLIC_TAGS_FORMULA],
+                capture_output=False,
+                text=True,
+                timeout=300,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return False, f"Homebrew uninstall failed: {exc}"
+        if uninstall_result.returncode != 0:
+            return False, "Homebrew could not uninstall the exact Tags formula."
+        return True, f"Uninstalled Homebrew formula: {PUBLIC_TAGS_FORMULA}"
+
+    try:
+        path.unlink()
+    except OSError as exc:
+        return False, f"Could not delete manual public launcher {path}: {exc}"
+    return True, f"Deleted manual public launcher: {path}"
+
+
 @uninstall_app.callback(invoke_without_command=True)
 @handle_aws_errors
 def uninstall(
@@ -831,16 +921,12 @@ def uninstall(
     # Delete binary
     if not skip_binary and has_binary:
         console.print(f"[yellow]Deleting CLI binary:[/yellow] {binary_path}")
-        if not _is_public_tags_executable(binary_path):
-            print_warning(f"  Not deleting non-public or legacy launcher: {binary_path}")
+        success, message = _remove_public_binary(binary_path)
+        if success:
+            print_success(f"  {message}")
         else:
-            try:
-                binary_path.unlink()
-                print_success(f"  Deleted: {binary_path}")
-            except Exception as e:
-                print_error(f"  Failed: {e}")
-                errors.append(f"Binary: {e}")
-                console.print(f"  [dim]You may need to manually delete: sudo rm {binary_path}[/dim]")
+            print_error(f"  {message}")
+            errors.append(f"Binary: {message}")
 
     # Phase 5: Summary
     console.print("\n[bold cyan]Phase 5: Summary[/bold cyan]\n")

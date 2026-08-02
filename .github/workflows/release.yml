@@ -21,7 +21,6 @@ jobs:
   verify:
     name: Verify release source
     runs-on: ubuntu-24.04
-    if: startsWith(github.ref_name, 'v')
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,11 +40,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git fetch --no-tags origin main:refs/remotes/origin/main
-          test "$GITHUB_SHA" = "$(git rev-parse origin/main)" || {
-            echo "::error::Release tag must point at origin/main"
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            echo "::error::Release must run from an immutable tag ref"
             exit 1
-          }
+          fi
+          git fetch --no-tags origin main:refs/remotes/origin/main
+          tag_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          head_sha="$(git rev-parse "HEAD^{commit}")"
+          main_sha="$(git rev-parse "refs/remotes/origin/main^{commit}")"
+          if [[ "$tag_sha" != "$head_sha" || "$head_sha" != "$main_sha" ]]; then
+            echo "::error::Release tag, checked-out HEAD, and origin/main must be the same commit"
+            exit 1
+          fi
           python3 - <<'PY'
           import os
           import re
@@ -116,7 +122,9 @@ jobs:
           tar -xzf "artifacts/$BINARY_NAME-linux-x86_64.tar.gz" -C "$verify_dir"
           test -x "$verify_dir/$BINARY_NAME"
           file "$verify_dir/$BINARY_NAME" | grep -Eq 'x86-64|x86_64'
-          "$verify_dir/$BINARY_NAME" --version
+          expected_version="${RELEASE_TAG#v}"
+          version_output="$("$verify_dir/$BINARY_NAME" --version)"
+          [[ "$version_output" == "$BINARY_NAME $expected_version (production)" ]]
           "$verify_dir/$BINARY_NAME" --help >/dev/null
           "$verify_dir/$BINARY_NAME" discover --help >/dev/null
       - name: Generate final Linux artifact SBOM

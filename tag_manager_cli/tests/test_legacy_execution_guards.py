@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from tag_manager_cli.commands import uninstall_commands
+
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -63,6 +65,104 @@ print('legacy-exists', Path({os.fspath(legacy)!r}).exists())
 
     assert result.returncode == 0
     assert "legacy-exists True" in result.stdout
+
+
+def test_homebrew_uninstall_uses_exact_formula_and_never_unlinks_launcher(
+    monkeypatch,
+    tmp_path,
+):
+    cellar = tmp_path / "Cellar"
+    target = _executable(
+        cellar / "bluearch-aws-tags" / "0.12.4" / "bin" / "bluearch-aws-tags"
+    )
+    launcher = tmp_path / "homebrew" / "bin" / "bluearch-aws-tags"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to(target)
+    brew = _executable(tmp_path / "homebrew" / "bin" / "brew")
+    calls = []
+    monkeypatch.setattr(
+        uninstall_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: os.fspath(brew),
+    )
+
+    def record(argv, **_kwargs):
+        calls.append(argv)
+        stdout = f"{cellar}\n" if argv[1:] == ["--cellar"] else ""
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(uninstall_commands.subprocess, "run", record)
+
+    success, _message = uninstall_commands._remove_public_binary(launcher)
+
+    assert success is True
+    assert launcher.is_symlink(), "runtime uninstall directly unlinked a Homebrew launcher"
+    assert calls == [
+        [os.fspath(brew), "--cellar"],
+        [
+            os.fspath(brew),
+            "trust",
+            "--formula",
+            "bluearchio/tap/bluearch-aws-tags",
+        ],
+        [os.fspath(brew), "uninstall", "bluearchio/tap/bluearch-aws-tags"],
+    ]
+
+
+def test_homebrew_uninstall_preserves_launcher_when_exact_formula_trust_fails(
+    monkeypatch,
+    tmp_path,
+):
+    cellar = tmp_path / "Cellar"
+    target = _executable(
+        cellar / "bluearch-aws-tags" / "0.12.4" / "bin" / "bluearch-aws-tags"
+    )
+    launcher = tmp_path / "homebrew" / "bin" / "bluearch-aws-tags"
+    launcher.parent.mkdir(parents=True)
+    launcher.symlink_to(target)
+    brew = _executable(tmp_path / "homebrew" / "bin" / "brew")
+    calls = []
+    monkeypatch.setattr(
+        uninstall_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: os.fspath(brew),
+    )
+
+    def record(argv, **_kwargs):
+        calls.append(argv)
+        if argv[1:] == ["--cellar"]:
+            return subprocess.CompletedProcess(argv, 0, stdout=f"{cellar}\n", stderr="")
+        return subprocess.CompletedProcess(argv, 9, stdout="", stderr="not trusted")
+
+    monkeypatch.setattr(uninstall_commands.subprocess, "run", record)
+
+    success, message = uninstall_commands._remove_public_binary(launcher)
+
+    assert success is False
+    assert "trust failed" in message
+    assert launcher.is_symlink()
+    assert all("uninstall" not in call for call in calls)
+
+
+def test_uninstall_unlinks_only_manual_public_launcher_and_preserves_target(
+    monkeypatch,
+    tmp_path,
+):
+    target = _executable(tmp_path / "manual" / "bluearch-aws-tags")
+    launcher = tmp_path / "bin" / "bluearch-aws-tags"
+    launcher.parent.mkdir()
+    launcher.symlink_to(target)
+    monkeypatch.setattr(
+        uninstall_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: None,
+    )
+
+    success, _message = uninstall_commands._remove_public_binary(launcher)
+
+    assert success is True
+    assert not launcher.exists()
+    assert target.exists()
 
 
 def test_uninstall_credential_error_prints_public_recovery_commands(tmp_path):

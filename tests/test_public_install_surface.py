@@ -15,11 +15,14 @@ CUSTOMER_ROOTS = (
 )
 ACTIVE_SUFFIXES = {".md", ".py", ".sh", ".ts", ".vue", ".js"}
 LEGACY_COMMAND = re.compile(
-    r"(?<!=)\btag-manager\s+(?:"
+    r"(?<!=)\b(?:"
+    r"tag-manager\s+(?:"
     r"--[a-z]|accounts\b|alarms\b|ask\b|cost\b|cross-account\b|database\b|"
     r"dev\b|discover\b|interactive\b|lifecycle\b|policy\b|report\b|resources\b|"
     r"setup\b|system\b|tag\b|tags\b|tasks\b|uninstall\b|update\b|version\b|"
-    r"web\b|workers\b"
+    r"web\b|workers\b)"
+    r"|bluearch-core\s+(?:--[a-z]|db\b|doctor\b|restart\b|start\b|status\b|"
+    r"stop\b|uninstall\b|update\b|version\b|web\b)"
     r")",
 )
 
@@ -71,6 +74,9 @@ def test_clean_uninstall_preserves_deprecated_closed_source_installation() -> No
     assert "rm -rf ~/.tag-manager" not in script
     assert "pip uninstall tag-manager" not in script
     assert "bluearch-aws-core" in script
+    assert 'remove_manual_public_path "/opt/homebrew/bin/$PUBLIC_BINARY"' in script
+    assert 'remove_manual_public_path "/usr/local/bin/$PUBLIC_BINARY"' in script
+    assert "*/Cellar/bluearch-aws-tags/*" in script
     assert "shutil.rmtree(LOCAL_DATA_DIR)" not in runtime_uninstall
     assert "Preserve local legacy/shared data" in runtime_uninstall
     assert 'PUBLIC_TAGS_EXECUTABLE = "bluearch-aws-tags"' in runtime_uninstall

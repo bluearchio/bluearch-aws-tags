@@ -138,10 +138,6 @@ canonical_public_core_target() {
   printf '%s\n' "$target"
 }
 
-extract_semver() {
-  sed -nE 's/.*[^0-9]([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' | head -n 1
-}
-
 version_at_least() {
   local actual="$1"
   local required="$2"
@@ -158,15 +154,16 @@ version_at_least() {
 
 public_core_version_satisfies() {
   local candidate="$1"
-  local target output version_line version
+  local target output version_line version identity_pattern
   target="$(canonical_public_core_target "$candidate")" || return 1
   # Only the already-resolved, exact public target is executed. A legacy target
   # is rejected by basename before this point.
   output="$("$target" --version 2>/dev/null)" || return 1
   version_line="${output%%$'\n'*}"
-  [[ "$version_line" == "$CORE_BINARY_NAME "* ]] || return 1
-  version="$(printf '%s\n' "$version_line" | extract_semver)"
-  [[ -n "$version" ]] || return 1
+  [[ "$output" != *$'\n'* ]] || return 1
+  identity_pattern="^${CORE_BINARY_NAME} ([0-9]+\.[0-9]+\.[0-9]+)$"
+  [[ "$version_line" =~ $identity_pattern ]] || return 1
+  version="${BASH_REMATCH[1]}"
   version_at_least "$version" "$MINIMUM_CORE_VERSION"
 }
 

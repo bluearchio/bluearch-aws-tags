@@ -27,6 +27,7 @@ def _run_text(job: dict) -> str:
 def test_release_graph_verifies_tag_and_main_before_builds() -> None:
     jobs = _workflow()["jobs"]
 
+    assert "if" not in jobs["verify"]
     assert jobs["linux"]["needs"] == "verify"
     assert jobs["macos"]["needs"] == "verify"
     assert set(jobs["publish"]["needs"]) == {"verify", "linux", "macos"}
@@ -34,6 +35,30 @@ def test_release_graph_verifies_tag_and_main_before_builds() -> None:
     assert "origin/main" in verify_commands
     assert "tag_manager_cli/__init__.py" in verify_commands
     assert "pytest" in verify_commands
+
+
+def test_release_gate_proves_an_immutable_tag_ref_at_checked_out_main() -> None:
+    verify_job = _workflow()["jobs"]["verify"]
+    gate = next(
+        step for step in verify_job["steps"]
+        if step.get("name") == "Verify tag, committed version, and main SHA"
+    )["run"]
+
+    assert '"${GITHUB_REF_TYPE}" != "tag"' in gate
+    assert 'git rev-parse "refs/tags/${RELEASE_TAG}^{commit}"' in gate
+    assert 'git rev-parse "HEAD^{commit}"' in gate
+    assert 'git rev-parse "refs/remotes/origin/main^{commit}"' in gate
+    assert '"$tag_sha" != "$head_sha"' in gate
+    assert '"$head_sha" != "$main_sha"' in gate
+
+
+def test_branch_named_like_a_release_tag_cannot_use_manual_dispatch() -> None:
+    verify_job = _workflow()["jobs"]["verify"]
+    gate = _run_text(verify_job)
+
+    assert "workflow_dispatch" in _workflow()["on"]
+    assert "GITHUB_REF_TYPE" in gate
+    assert "immutable tag ref" in gate
 
 
 def test_release_verifies_final_artifacts_and_has_no_inline_stamping_or_tap_mutation() -> None:
@@ -45,6 +70,13 @@ def test_release_verifies_final_artifacts_and_has_no_inline_stamping_or_tap_muta
     assert "Stamp release version" not in workflow_text
     assert "homebrew-tap" not in workflow_text
     assert "update_formula.py" not in workflow_text
+
+
+def test_linux_release_archive_requires_exact_public_version_identity() -> None:
+    linux_commands = _run_text(_workflow()["jobs"]["linux"])
+
+    assert 'expected_version="${RELEASE_TAG#v}"' in linux_commands
+    assert '"$BINARY_NAME $expected_version (production)"' in linux_commands
 
 
 def test_macos_archive_is_root_layout_and_verifier_checks_public_version() -> None:

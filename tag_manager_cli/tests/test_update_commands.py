@@ -170,7 +170,18 @@ def test_core_installer_rejects_dynamically_escaped_legacy_wrapper(wrapper, tmp_
 
 def test_core_installer_allows_public_homebrew_formula(tmp_path):
     marker = tmp_path / "brew-ran"
-    _installer(tmp_path / "brew", marker)
+    prefix = tmp_path / "core-prefix"
+    core = prefix / "bin" / "bluearch-aws-core"
+    core.parent.mkdir(parents=True)
+    core.write_text("#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")
+    core.chmod(0o755)
+    brew = tmp_path / "brew"
+    brew.write_text(
+        "#!/bin/sh\n"
+        f"touch {marker}\n"
+        f"if [ \"$1\" = \"--prefix\" ]; then echo {prefix}; fi\n"
+    )
+    brew.chmod(0o755)
 
     result = _run_core_installer(
         "brew install bluearchio/tap/bluearch-aws-core",
@@ -200,7 +211,19 @@ def test_core_installer_allows_public_development_pipx_form(tmp_path):
 def test_core_installer_executes_canonical_target_after_symlink_swap(tmp_path):
     public_marker = tmp_path / "public-ran"
     legacy_marker = tmp_path / "legacy-ran"
-    public = _installer(tmp_path / "public" / "brew", public_marker)
+    prefix = tmp_path / "core-prefix"
+    core = prefix / "bin" / "bluearch-aws-core"
+    core.parent.mkdir(parents=True)
+    core.write_text("#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")
+    core.chmod(0o755)
+    public = tmp_path / "public" / "brew"
+    public.parent.mkdir()
+    public.write_text(
+        "#!/bin/sh\n"
+        f"touch {public_marker}\n"
+        f"if [ \"$1\" = \"--prefix\" ]; then echo {prefix}; fi\n"
+    )
+    public.chmod(0o755)
     legacy = _installer(tmp_path / "legacy" / "sh", legacy_marker)
     link = tmp_path / "bin" / "brew"
     link.parent.mkdir()
@@ -318,10 +341,22 @@ def test_homebrew_update_trusts_exact_formulas_before_any_resolution_or_update(
 
     def record(argv, **_kwargs):
         calls.append(argv)
-        stdout = "bluearch-aws-core 0.2.6" if argv[1:3] == ["list", "--versions"] else ""
+        if argv[1:3] == ["list", "--versions"]:
+            stdout = "bluearch-aws-core 0.2.6"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
+            stdout = "/opt/homebrew/opt/bluearch-aws-core\n"
+        else:
+            stdout = ""
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(update_commands.subprocess, "run", record)
+    monkeypatch.setattr(
+        update_commands,
+        "get_public_core_version",
+        lambda candidate: "0.2.6"
+        if candidate == "/opt/homebrew/opt/bluearch-aws-core/bin/bluearch-aws-core"
+        else None,
+    )
 
     assert update_commands.perform_homebrew_update("0.2.6") is True
     assert calls == [
@@ -330,8 +365,66 @@ def test_homebrew_update_trusts_exact_formulas_before_any_resolution_or_update(
         [os.fspath(brew), "update"],
         [os.fspath(brew), "list", "--versions", "bluearchio/tap/bluearch-aws-core"],
         [os.fspath(brew), "upgrade", "bluearchio/tap/bluearch-aws-core"],
+        [os.fspath(brew), "--prefix", "bluearchio/tap/bluearch-aws-core"],
         [os.fspath(brew), "upgrade", "bluearchio/tap/bluearch-aws-tags"],
     ]
+
+
+def test_homebrew_update_stops_when_metadata_update_fails(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    calls = []
+    monkeypatch.setattr(
+        update_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: os.fspath(brew),
+    )
+
+    def record(argv, **_kwargs):
+        calls.append(argv)
+        return subprocess.CompletedProcess(
+            argv,
+            7 if argv[1:] == ["update"] else 0,
+            stdout="",
+            stderr="metadata unavailable" if argv[1:] == ["update"] else "",
+        )
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+
+    assert update_commands.perform_homebrew_update("0.2.6") is False
+    assert calls == [
+        [os.fspath(brew), "trust", "--formula", "bluearchio/tap/bluearch-aws-core"],
+        [os.fspath(brew), "trust", "--formula", "bluearchio/tap/bluearch-aws-tags"],
+        [os.fspath(brew), "update"],
+    ]
+
+
+def test_homebrew_update_stops_when_installed_core_is_below_requirement(
+    monkeypatch,
+    tmp_path,
+):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    calls = []
+    monkeypatch.setattr(
+        update_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: os.fspath(brew),
+    )
+
+    def record(argv, **_kwargs):
+        calls.append(argv)
+        if argv[1:3] == ["list", "--versions"]:
+            stdout = "bluearch-aws-core 0.2.5"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
+            stdout = "/opt/homebrew/opt/bluearch-aws-core\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+    monkeypatch.setattr(update_commands, "get_public_core_version", lambda _candidate: "0.2.5")
+
+    assert update_commands.perform_homebrew_update("0.2.6") is False
+    assert [os.fspath(brew), "upgrade", "bluearchio/tap/bluearch-aws-tags"] not in calls
 
 
 def test_homebrew_update_fails_closed_when_exact_formula_trust_fails(
@@ -496,6 +589,7 @@ def test_homebrew_manual_remediation_trusts_each_formula_before_upgrade():
 def test_homebrew_check_fails_visibly_on_nonzero_outdated_command(monkeypatch, tmp_path):
     brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
     errors = []
+    events = []
     monkeypatch.setattr(update_commands, "get_updates", lambda **_kwargs: [])
     monkeypatch.setattr(update_commands, "print_core_requirement", lambda _required: None)
     monkeypatch.setattr(
@@ -506,16 +600,16 @@ def test_homebrew_check_fails_visibly_on_nonzero_outdated_command(monkeypatch, t
     monkeypatch.setattr(
         update_commands,
         "_prepare_homebrew",
-        lambda _formulas: os.fspath(brew),
+        lambda formulas: events.append(("prepare", formulas)) or os.fspath(brew),
     )
     monkeypatch.setattr(update_commands, "print_error", errors.append)
-    monkeypatch.setattr(
-        update_commands.subprocess,
-        "run",
-        lambda argv, **_kwargs: subprocess.CompletedProcess(
+    def fail_outdated(argv, **_kwargs):
+        events.append(("run", argv))
+        return subprocess.CompletedProcess(
             argv, 7, stdout="", stderr="tap metadata unavailable"
-        ),
-    )
+        )
+
+    monkeypatch.setattr(update_commands.subprocess, "run", fail_outdated)
 
     result = CliRunner().invoke(update_commands.app, ["--check"])
 
@@ -524,6 +618,19 @@ def test_homebrew_check_fails_visibly_on_nonzero_outdated_command(monkeypatch, t
         "Homebrew update check failed: tap metadata unavailable" in message
         for message in errors
     )
+    assert events == [
+        (
+            "prepare",
+            (
+                "bluearchio/tap/bluearch-aws-core",
+                "bluearchio/tap/bluearch-aws-tags",
+            ),
+        ),
+        (
+            "run",
+            [os.fspath(brew), "outdated", "bluearchio/tap/bluearch-aws-tags"],
+        ),
+    ]
 
 
 def test_non_homebrew_linux_update_verifies_installer_before_execution(

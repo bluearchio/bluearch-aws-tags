@@ -323,7 +323,7 @@ def reset_system(
         print_warning(f"WARN Could not clear cache: {e}")
     
     print_warning("WARN Storage is owned by bluearch-core and was not reset by Tag Manager.")
-    print_safe("Use [cyan]bluearch-core db backup[/cyan] before any core storage reset operation.")
+    print_safe("Use [cyan]bluearch-aws-core db backup[/cyan] before any core storage reset operation.")
     
     # Remove config files if requested
     if not keep_config:

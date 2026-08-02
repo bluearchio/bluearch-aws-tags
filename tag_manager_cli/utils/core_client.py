@@ -23,6 +23,9 @@ DEFAULT_CORE_PORT = 8094
 DEFAULT_TOKEN_PATH = Path.home() / ".bluearch-core" / "runtime" / "api-token"
 PUBLIC_CORE_EXECUTABLE = "bluearch-aws-core"
 LEGACY_CORE_EXECUTABLES = {"bluearch-core"}
+PUBLIC_CORE_VERSION_LINE = re.compile(
+    rf"^{re.escape(PUBLIC_CORE_EXECUTABLE)} (\d+\.\d+\.\d+)$"
+)
 # Release-owned product requirement. Bump this only when Tag Manager starts
 # using a bluearch-core API or behavior that older core versions do not support.
 DEFAULT_MINIMUM_CORE_VERSION = "0.2.6"
@@ -122,11 +125,17 @@ def check_core_dependency(app_name: str = "tag-manager", minimum_version: str | 
 def get_installed_core_version() -> str | None:
     """Return the installed public Core binary version, if it exists."""
     override = os.environ.get("BLUEARCH_CORE_BINARY")
-    binary = (
-        _resolve_core_executable(override)
+    candidate = (
+        override
         if override
-        else _resolve_core_executable(shutil.which(PUBLIC_CORE_EXECUTABLE))
+        else shutil.which(PUBLIC_CORE_EXECUTABLE)
     )
+    return get_public_core_version(candidate)
+
+
+def get_public_core_version(candidate: str | None) -> str | None:
+    """Return a version only for an exact public Core identity line."""
+    binary = _resolve_core_executable(candidate)
     if not binary:
         return None
     try:
@@ -136,10 +145,11 @@ def get_installed_core_version() -> str | None:
             text=True,
             timeout=10,
         )
-    except Exception:
+    except (OSError, subprocess.SubprocessError):
         return None
-    output = f"{result.stdout}\n{result.stderr}"
-    return _extract_version(output)
+    if result.returncode != 0:
+        return None
+    return _extract_public_core_version(result.stdout)
 
 
 def _resolve_core_executable(
@@ -201,12 +211,13 @@ def resolve_core_install_command(development: bool = False) -> list[str]:
     return [target, *command[1:]]
 
 
-def _extract_version(text: str) -> str | None:
-    match = re.search(r"v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9_.-]+)?", text or "")
-    if match:
-        return match.group(0).lstrip("v")
-    sha_match = re.search(r"\b[0-9a-f]{7,40}\b", text or "", re.IGNORECASE)
-    return sha_match.group(0) if sha_match else None
+def _extract_public_core_version(text: str) -> str | None:
+    """Parse one exact ``bluearch-aws-core X.Y.Z`` output line."""
+    lines = (text or "").splitlines()
+    if len(lines) != 1:
+        return None
+    match = PUBLIC_CORE_VERSION_LINE.fullmatch(lines[0])
+    return match.group(1) if match else None
 
 
 def _format_core_update_message(app_name: str, status: dict[str, Any], minimum_version: str) -> str:

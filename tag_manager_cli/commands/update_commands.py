@@ -30,8 +30,10 @@ try:
     from ..utils.core_client import (
         CoreRuntimeError,
         MINIMUM_CORE_VERSION,
+        PUBLIC_CORE_EXECUTABLE,
         core_version_satisfies,
         get_installed_core_version,
+        get_public_core_version,
         resolve_core_install_command,
     )
     from .. import __version__
@@ -50,8 +52,10 @@ except ImportError:
     from tag_manager_cli.utils.core_client import (
         CoreRuntimeError,
         MINIMUM_CORE_VERSION,
+        PUBLIC_CORE_EXECUTABLE,
         core_version_satisfies,
         get_installed_core_version,
+        get_public_core_version,
         resolve_core_install_command,
     )
     from tag_manager_cli import __version__
@@ -178,7 +182,39 @@ def _perform_homebrew_core_update(brew: str, required_core_version: str) -> bool
             text=True,
             timeout=300,
         )
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    return _verify_homebrew_core_installation(brew, required_core_version)
+
+
+def _verify_homebrew_core_installation(brew: str, required_core_version: str) -> bool:
+    """Verify the exact Core binary installed by the trusted Homebrew formula."""
+    prefix_result = subprocess.run(
+        [brew, "--prefix", PUBLIC_CORE_FORMULA],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if prefix_result.returncode != 0:
+        detail = (prefix_result.stderr or prefix_result.stdout or "unknown error").strip()
+        print_error(f"Could not resolve the Homebrew Core formula prefix: {detail}")
+        return False
+
+    prefix_lines = [line.strip() for line in prefix_result.stdout.splitlines() if line.strip()]
+    if len(prefix_lines) != 1 or not Path(prefix_lines[0]).is_absolute():
+        print_error("Homebrew returned an invalid Core formula prefix.")
+        return False
+
+    core_binary = Path(prefix_lines[0]) / "bin" / PUBLIC_CORE_EXECUTABLE
+    installed_version = get_public_core_version(os.fspath(core_binary))
+    if not core_version_satisfies(installed_version, required_core_version):
+        actual = installed_version or "invalid public identity"
+        print_error(
+            f"Homebrew installed bluearch-aws-core {actual}; "
+            f"required >= {required_core_version}."
+        )
+        return False
+    return True
 
 
 def perform_homebrew_core_update(required_core_version: str) -> bool:
@@ -203,7 +239,13 @@ def perform_homebrew_update(required_core_version: str) -> bool:
 
     try:
         print_safe("[dim]Updating Homebrew tap...[/dim]")
-        subprocess.run([brew, "update"], capture_output=True, text=True, timeout=120)
+        update_result = subprocess.run(
+            [brew, "update"], capture_output=True, text=True, timeout=120
+        )
+        if update_result.returncode != 0:
+            detail = (update_result.stderr or update_result.stdout or "unknown error").strip()
+            print_error(f"Homebrew metadata update failed: {detail}")
+            return False
 
         if not _perform_homebrew_core_update(brew, required_core_version):
             print_error("bluearch-aws-core update failed. Tags update was not started.")
@@ -237,7 +279,11 @@ def perform_core_install(required_core_version: str, development_channel: bool) 
         return False
     print_safe(f"[dim]Executing: {' '.join(command)}[/dim]")
     result = subprocess.run(command, capture_output=False, text=True)
-    return result.returncode == 0
+    if result.returncode != 0:
+        return False
+    if development_channel:
+        return True
+    return _verify_homebrew_core_installation(command[0], required_core_version)
 
 
 def homebrew_update_remediation() -> str:
@@ -482,7 +528,7 @@ def update_main(
             # Check-only mode for Homebrew
             if check:
                 print_safe("\n[blue]Checking for Homebrew updates...[/blue]")
-                brew = _prepare_homebrew((PUBLIC_TAGS_FORMULA,))
+                brew = _prepare_homebrew((PUBLIC_CORE_FORMULA, PUBLIC_TAGS_FORMULA))
                 if brew is None:
                     raise typer.Exit(1)
                 try:

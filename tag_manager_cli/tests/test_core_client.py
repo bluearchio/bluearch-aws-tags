@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from tag_manager_cli.utils import core_client
 
 
@@ -22,7 +24,7 @@ def test_installed_core_version_rejects_arbitrary_absolute_override(monkeypatch,
 
 def test_installed_core_version_accepts_public_environment_override(monkeypatch, tmp_path):
     """An explicit override is supported only for the canonical public Core binary."""
-    binary = _executable(tmp_path / "bluearch-aws-core", "0.2.6")
+    binary = _executable(tmp_path / "bluearch-aws-core", "bluearch-aws-core 0.2.6")
     monkeypatch.setenv("BLUEARCH_CORE_BINARY", os.fspath(binary))
 
     assert core_client.get_installed_core_version() == "0.2.6"
@@ -71,11 +73,41 @@ def test_installed_core_version_rejects_public_symlink_to_arbitrary_target(monke
 
 def test_installed_core_version_resolves_the_public_path_launcher(monkeypatch, tmp_path):
     """PATH lookup executes the public launcher rather than a legacy fallback."""
-    _executable(tmp_path / "bluearch-aws-core", "0.2.6")
+    _executable(tmp_path / "bluearch-aws-core", "bluearch-aws-core 0.2.6")
     monkeypatch.delenv("BLUEARCH_CORE_BINARY", raising=False)
     monkeypatch.setenv("PATH", os.fspath(tmp_path))
 
     assert core_client.get_installed_core_version() == "0.2.6"
+
+
+@pytest.mark.parametrize(
+    "identity",
+    [
+        "bluearch-core 99.0.0",
+        "99.0.0",
+        "bluearch-aws-core garbage 99.0.0",
+        "bluearch-aws-core 99.0.0 garbage",
+    ],
+)
+def test_installed_core_version_rejects_nonexact_version_identity(
+    monkeypatch,
+    tmp_path,
+    identity,
+):
+    binary = _executable(tmp_path / "bluearch-aws-core", identity)
+    monkeypatch.setenv("BLUEARCH_CORE_BINARY", os.fspath(binary))
+
+    assert core_client.get_installed_core_version() is None
+
+
+def test_installed_core_version_rejects_extra_production_label(monkeypatch, tmp_path):
+    binary = _executable(
+        tmp_path / "bluearch-aws-core",
+        "'bluearch-aws-core 0.2.6 (production)'",
+    )
+    monkeypatch.setenv("BLUEARCH_CORE_BINARY", os.fspath(binary))
+
+    assert core_client.get_installed_core_version() is None
 
 
 def test_core_resolver_resolves_before_executable_validation(monkeypatch, tmp_path):
