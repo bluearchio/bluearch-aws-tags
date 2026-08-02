@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import re
+import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -71,6 +72,18 @@ def test_dependency_audit_and_builds_require_fixed_setuptools() -> None:
     for filename in ("build-requirements.txt", "build-requirements-macos.txt"):
         requirements = (ROOT / filename).read_text(encoding="utf-8").splitlines()
         assert "setuptools>=83" in requirements
+
+
+def test_frontend_lock_meets_dependency_audit_patch_minima() -> None:
+    lock = json.loads(
+        (ROOT / "frontend" / "package-lock.json").read_text(encoding="utf-8")
+    )
+    packages = lock["packages"]
+
+    brace_expansion = packages["node_modules/brace-expansion"]["version"]
+    postcss = packages["node_modules/postcss"]["version"]
+    assert tuple(map(int, brace_expansion.split("."))) >= (2, 1, 3)
+    assert tuple(map(int, postcss.split("."))) >= (8, 5, 18)
 
 
 def test_release_gate_proves_an_immutable_tag_ref_at_checked_out_main() -> None:
