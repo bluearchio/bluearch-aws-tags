@@ -34,7 +34,10 @@ EXPECTED="$VERIFY_DIR/$PUBLIC_BINARY_NAME"
 }
 
 codesign --verify --deep --strict --verbose=2 "$EXPECTED"
-spctl --assess --type execute --verbose=4 "$EXPECTED"
+codesign -vvvv \
+  -R="notarized" \
+  --check-notarization \
+  "$EXPECTED"
 file "$EXPECTED" | grep -q 'arm64'
 VERSION_OUTPUT="$(HOME="$VERSION_HOME" "$EXPECTED" --version)"
 [[ "$VERSION_OUTPUT" == "$PUBLIC_BINARY_NAME $EXPECTED_VERSION (production)" ]] || {

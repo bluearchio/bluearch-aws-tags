@@ -225,6 +225,21 @@ def test_release_verifies_final_artifacts_without_inline_version_stamping() -> N
     assert "Stamp release version" not in workflow_text
 
 
+def test_macos_release_checks_cli_notarization_without_spctl_app_assessment() -> None:
+    macos_commands = _run_text(_workflow()["jobs"]["macos"])
+    verifier = (ROOT / "scripts" / "verify_macos_artifact.sh").read_text(encoding="utf-8")
+
+    assert 'codesign --verify --deep --strict --verbose=2 "$EXPECTED"' in verifier
+    assert "--check-notarization" in verifier
+    assert '-R="notarized"' in verifier
+    assert "spctl --assess" not in verifier
+    assert macos_commands.count("xcrun notarytool submit") == 2
+    assert macos_commands.count("--wait") >= 2
+    assert macos_commands.rfind("xcrun notarytool submit") < macos_commands.index(
+        "bash scripts/verify_macos_artifact.sh"
+    )
+
+
 def test_release_sboms_run_once_on_ubuntu_from_final_archives() -> None:
     jobs = _workflow()["jobs"]
     job = jobs["sbom"]
