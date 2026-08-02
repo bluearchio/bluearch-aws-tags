@@ -208,6 +208,7 @@ def test_tap_auto_merge_is_conditional_and_waits_for_required_checks() -> None:
     assert "--admin" not in merge["run"]
 
     _, wait = _named_step(homebrew, "Wait for Homebrew formula merge")
+    assert wait["if"] == "steps.homebrew_pr.outputs.pr_number != ''"
     assert wait["timeout-minutes"] == "125"
     assert wait["env"]["PR_NUMBER"] == "${{ steps.homebrew_pr.outputs.pr_number }}"
     assert 'gh pr view "$PR_NUMBER" --repo "$HOMEBREW_TAP_REPO" --json state' in wait["run"]

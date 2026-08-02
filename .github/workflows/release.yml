@@ -489,6 +489,7 @@ jobs:
           [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Invalid Homebrew tap pull request number"; exit 1; }
           gh pr merge "$PR_NUMBER" --repo "$HOMEBREW_TAP_REPO" --auto --squash --delete-branch
       - name: Wait for Homebrew formula merge
+        if: steps.homebrew_pr.outputs.pr_number != ''
         timeout-minutes: 125
         env:
           GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
