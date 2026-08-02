@@ -128,6 +128,52 @@ def test_release_gate_requires_dev_to_be_promoted_into_tagged_main() -> None:
     assert "origin/dev must be merged into main before tagging a release" in gate
 
 
+def test_release_credentials_preflight_runs_before_tests_and_builds() -> None:
+    verify = _workflow()["jobs"]["verify"]
+    gate_index, _ = _named_step(
+        verify, "Verify tag, committed version, and main SHA"
+    )
+    preflight_index, preflight = _named_step(
+        verify, "Validate release credential availability"
+    )
+    install_index, _ = _named_step(verify, "Install test dependencies")
+    commands = preflight["run"]
+
+    assert gate_index < preflight_index < install_index
+    assert preflight["env"] == {
+        "MACOS_CERTIFICATE_P12_BASE64": "${{ secrets.MACOS_CERTIFICATE_P12_BASE64 || secrets.APPLE_CERTIFICATE_BASE64 || secrets.MACOS_CERTIFICATE }}",
+        "MACOS_CERTIFICATE_PASSWORD": "${{ secrets.MACOS_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD || secrets.MACOS_CERTIFICATE_PWD }}",
+        "APPLE_API_KEY_P8_BASE64": "${{ secrets.APPLE_API_KEY_P8_BASE64 }}",
+        "APPLE_API_KEY_ID": "${{ secrets.APPLE_API_KEY_ID }}",
+        "APPLE_API_ISSUER_ID": "${{ secrets.APPLE_API_ISSUER_ID }}",
+        "APPLE_ID": "${{ secrets.APPLE_ID }}",
+        "APPLE_ID_PASSWORD": "${{ secrets.APPLE_ID_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}",
+        "APPLE_TEAM_ID": "${{ secrets.APPLE_TEAM_ID }}",
+        "GH_TOKEN": "${{ secrets.HOMEBREW_TAP_TOKEN_2 }}",
+    }
+    assert "MACOS_CERTIFICATE_P12_BASE64 MACOS_CERTIFICATE_PASSWORD" in commands
+    assert '[[ -z "${GH_TOKEN:-}" ]]' in commands
+    assert "Missing HOMEBREW_TAP_TOKEN_2" in commands
+    assert '"repos/${HOMEBREW_TAP_REPO}"' in commands
+    assert ".permissions.push" in commands
+    assert ".allow_auto_merge" in commands
+    assert '"${HOMEBREW_TAP_REPO}"$\'\\ttrue\\ttrue\'' in commands
+    assert 'gh pr list --repo "$HOMEBREW_TAP_REPO"' in commands
+    assert "APPLE_API_KEY_P8_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER_ID" in commands
+    assert "APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID" in commands
+    assert commands.count("base64.b64decode") == 2
+    assert commands.count("validate=True") == 2
+    assert 'os.environ["MACOS_CERTIFICATE_P12_BASE64"]' in commands
+    assert 'os.environ["APPLE_API_KEY_P8_BASE64"]' in commands
+    assert "api_notarization_ready" in commands
+    assert "apple_id_notarization_ready" in commands
+    assert "set -x" not in commands
+    assert "printenv" not in commands
+    assert "--token" not in commands
+    assert "$HOMEBREW_TAP_TOKEN_2" not in commands
+    assert "secrets." not in commands
+
+
 def test_branch_named_like_a_release_tag_cannot_use_manual_dispatch() -> None:
     verify_job = _workflow()["jobs"]["verify"]
     gate = _run_text(verify_job)
@@ -144,6 +190,45 @@ def test_release_verifies_final_artifacts_without_inline_version_stamping() -> N
     assert "scripts/verify_macos_artifact.sh" in _run_text(jobs["macos"])
     assert "SHA256SUMS" in _run_text(jobs["publish"])
     assert "Stamp release version" not in workflow_text
+
+
+@pytest.mark.parametrize(
+    ("job_name", "label", "platform", "archive_name", "extract_command"),
+    [
+        (
+            "linux",
+            "Linux",
+            "linux-x86_64",
+            "$BINARY_NAME-linux-x86_64.tar.gz",
+            'tar --no-same-owner --no-same-permissions -xzf "artifacts/$BINARY_NAME-linux-x86_64.tar.gz"',
+        ),
+        (
+            "macos",
+            "macOS",
+            "macos-arm64",
+            "$BINARY_NAME-macos-arm64.zip",
+            'ditto -x -k "artifacts/$BINARY_NAME-macos-arm64.zip"',
+        ),
+    ],
+)
+def test_release_sbom_scans_extracted_final_artifact_directory(
+    job_name: str,
+    label: str,
+    platform: str,
+    archive_name: str,
+    extract_command: str,
+) -> None:
+    job = _workflow()["jobs"][job_name]
+    extract_index, extract = _named_step(job, f"Extract final {label} artifact for SBOM")
+    sbom_index, sbom = _named_step(job, f"Generate final {label} artifact SBOM")
+    sbom_path = sbom["with"]["path"]
+
+    assert extract_index < sbom_index
+    assert archive_name in extract["run"]
+    assert extract_command in extract["run"]
+    assert f'$RUNNER_TEMP/sbom-{platform}' in extract["run"]
+    assert sbom_path == f"${{{{ runner.temp }}}}/sbom-{platform}"
+    assert not sbom_path.endswith((".tar.gz", ".zip"))
 
 
 def test_cross_repo_token_is_validated_before_github_release_publication() -> None:
