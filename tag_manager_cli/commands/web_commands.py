@@ -6,6 +6,7 @@ Supports foreground and daemon mode with single-instance guard.
 """
 
 import os
+import shlex
 import shutil
 import sys
 import signal
@@ -14,11 +15,19 @@ import subprocess
 import socket
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 
+import psutil
 import typer
 import typer.core
 from rich.console import Console
+
+from ..utils.public_executables import (
+    PUBLIC_CORE_FORMULA,
+    PUBLIC_TAGS_EXECUTABLE,
+    resolve_public_tags_executable,
+)
 
 console = Console()
 
@@ -46,23 +55,22 @@ def show_web_help():
     console.print("\n[bold cyan]Web Dashboard[/bold cyan] - Browser-based UI for AWS Tag Manager\n")
 
     console.print("[bold green]SERVER[/bold green]:")
-    console.print("- [cyan]start[/cyan]         - Managed by bluearch-core")
     console.print("- [cyan]stop[/cyan]          - Stop the running server")
     console.print("- [cyan]status[/cyan]        - Show server status")
     console.print("- [cyan]dev[/cyan]           - Start dev server with auto-reload\n")
 
     console.print("[bold green]QUICK START[/bold green]:")
-    console.print("1. [dim]bluearch-core start --daemon[/dim]      # Start core and available web dashboards")
+    console.print("1. [dim]bluearch-aws-core start --daemon[/dim]  # Start Core and available web dashboards")
     console.print("2. Open [cyan]http://localhost:8096[/cyan] in your browser\n")
 
     console.print("[bold yellow]EXAMPLES[/bold yellow]:")
-    console.print("  [dim]bluearch-core start --daemon[/dim]       # Run managed web dashboards")
+    console.print("  [dim]bluearch-aws-core start --daemon[/dim]   # Run managed web dashboards")
     console.print("  [dim]web stop[/dim]                          # Stop this dashboard")
     console.print("  [dim]web status[/dim]                        # Show this dashboard status")
     console.print("  [dim]web dev[/dim]                           # Dev mode with hot reload\n")
 
     console.print("[bold magenta]LOCAL ACCESS[/bold magenta]:")
-    console.print("  The dashboard is local-only and uses the bluearch-core service token.\n")
+    console.print("  The dashboard is local-only and uses the bluearch-aws-core service token.\n")
 
 
 @web_app.callback(invoke_without_command=True)
@@ -77,21 +85,29 @@ def web_callback(ctx: typer.Context):
 _data_dir = os.environ.get("TAG_MANAGER_DATA_DIR")
 TAG_MANAGER_DIR = Path(_data_dir).parent if _data_dir else Path.home() / ".tag-manager"
 LOG_DIR = TAG_MANAGER_DIR / "logs"
-PID_FILE = TAG_MANAGER_DIR / "web-server.pid"
-LOG_FILE = TAG_MANAGER_DIR / "web-server.log"  # symlink to current log
+# Runtime coordination files are public-product-specific so the open-source
+# launcher never removes or overwrites state owned by the deprecated product.
+PID_FILE = TAG_MANAGER_DIR / "bluearch-aws-tags-web-server.pid"
+LOG_FILE = TAG_MANAGER_DIR / "bluearch-aws-tags-web-server.log"  # symlink to current log
 MANAGED_DASHBOARD_PORTS = (8095, 8096)
-APP_PROCESS_MARKERS = (
-    "bluearch.py",
-    "bluearch web start",
-    "web.app:create_app",
-    "tag_manager_cli",
-    "tag-manager web start",
-)
+SOURCE_TAGS_MODULE = "tag_manager_cli.main"
+SOURCE_TAGS_WEB_APP = "tag_manager_cli.web.app:create_app"
 
 MAX_LOG_FILES = 5
 DEFAULT_WEB_READY_TIMEOUT_SECONDS = 90.0
 WEB_READY_POLL_INTERVAL_SECONDS = 0.2
 WEB_READY_TIMEOUT_ENV = "TAG_MANAGER_WEB_READY_TIMEOUT_SECONDS"
+
+
+@dataclass(frozen=True)
+class _ProcessSnapshot:
+    """Stable process identity retained for safe status and signaling."""
+
+    pid: int
+    create_time: float
+    argv: tuple[str, ...]
+    executable: str
+    process: psutil.Process
 
 
 def _rotate_logs() -> Path:
@@ -152,11 +168,9 @@ def _process_exists(pid: int) -> bool:
 
 
 def _is_our_process(pid: int) -> bool:
-    """Check if the PID belongs to a tag-manager web server process."""
-    cmdline = _process_cmdline(pid).lower()
-    if not cmdline:
-        return False
-    return "tag_manager_cli" in cmdline or "tag-manager" in cmdline
+    """Check if the PID belongs to a bluearch-aws-tags web server process."""
+    snapshot = _capture_process_snapshot(pid)
+    return snapshot is not None and _is_tags_web_process_snapshot(snapshot)
 
 
 def _is_server_running() -> tuple[bool, int | None]:
@@ -165,7 +179,8 @@ def _is_server_running() -> tuple[bool, int | None]:
     if pid is None:
         return False, None
 
-    if _process_exists(pid) and _is_our_process(pid):
+    snapshot = _capture_process_snapshot(pid)
+    if snapshot is not None and _is_tags_web_process_snapshot(snapshot):
         return True, pid
 
     # Stale PID file - process is gone
@@ -223,7 +238,7 @@ def _resolve_start_port(host: str, preferred: int) -> int:
         print_safe(
             f"[red][ERROR] Port {preferred} is still in use by a non-BlueArch/Tag Manager process.[/red]"
         )
-        print_safe("[dim]Stop that process and run `bluearch-core start --daemon` again.[/dim]")
+        print_safe("[dim]Stop that process and run `bluearch-aws-core start --daemon` again.[/dim]")
         raise typer.Exit(1)
     return _find_available_port(host, preferred)
 
@@ -240,7 +255,7 @@ def _is_port_available(host: str, port: int) -> bool:
 
 
 def _stop_known_web_servers(target_port: int) -> None:
-    """Stop only this app's old server plus any app process on target_port."""
+    """Stop only positively identified public/source Tags web processes."""
     pids = set()
     pid = _read_pid_path(PID_FILE)
     if pid:
@@ -249,15 +264,18 @@ def _stop_known_web_servers(target_port: int) -> None:
 
     stopped = []
     for pid in sorted(pids):
-        if pid == os.getpid() or not _process_exists(pid):
+        if pid == os.getpid():
             continue
-        if _is_bluearch_or_tag_manager_process(pid):
-            _terminate_process(pid)
+        snapshot = _capture_process_snapshot(pid)
+        if snapshot is not None and _is_tags_web_process_snapshot(snapshot) and _terminate_process(
+            pid,
+            expected_snapshot=snapshot,
+        ):
             stopped.append(pid)
 
     if stopped:
         print_safe(
-            f"[yellow]Stopped existing BlueArch/Tag Manager web process(es): {', '.join(map(str, stopped))}[/yellow]"
+            f"[yellow]Stopped existing BlueArch AWS Tags web process(es): {', '.join(map(str, stopped))}[/yellow]"
         )
     _remove_stale_pid_files()
 
@@ -288,14 +306,94 @@ def _listener_pids(port: int) -> set[int]:
 
 
 def _is_bluearch_or_tag_manager_process(pid: int) -> bool:
-    cmdline = _process_cmdline(pid).lower()
-    return any(marker in cmdline for marker in APP_PROCESS_MARKERS)
+    snapshot = _capture_process_snapshot(pid)
+    return snapshot is not None and _is_tags_web_process_snapshot(snapshot)
+
+
+def _is_tags_web_process_snapshot(snapshot: _ProcessSnapshot) -> bool:
+    if not _is_tags_web_argv(snapshot.argv):
+        return False
+
+    executable_name = Path(snapshot.argv[0]).name
+    if executable_name == PUBLIC_TAGS_EXECUTABLE:
+        if resolve_public_tags_executable(snapshot.executable) is not None:
+            return True
+        return (
+            _is_python_executable(snapshot.executable)
+            and resolve_public_tags_executable(snapshot.argv[0]) is not None
+        )
+
+    # Source console and uvicorn forms must be backed by a real Python runtime.
+    return _is_python_executable(snapshot.executable)
+
+
+def _is_tags_web_process_command(command_line: str) -> bool:
+    """Classify only public packaged or exact source Tags web invocations."""
+    if not command_line:
+        return False
+    try:
+        argv = shlex.split(command_line)
+    except ValueError:
+        return False
+    return _is_tags_web_argv(tuple(argv))
+
+
+def _is_tags_web_argv(argv: tuple[str, ...]) -> bool:
+    if not argv:
+        return False
+
+    executable_name = Path(argv[0]).name
+    if executable_name == PUBLIC_TAGS_EXECUTABLE:
+        return len(argv) >= 3 and argv[1] == "web" and argv[2] in {"start", "dev"}
+
+    if _is_python_executable(argv[0]):
+        if argv[1:3] == ("-m", SOURCE_TAGS_MODULE):
+            return len(argv) >= 5 and argv[3] == "web" and argv[4] in {"start", "dev"}
+        if argv[1:3] == ("-m", "uvicorn"):
+            return len(argv) >= 4 and argv[3] == SOURCE_TAGS_WEB_APP
+
+    return executable_name == "uvicorn" and len(argv) >= 2 and argv[1] == SOURCE_TAGS_WEB_APP
+
+
+def _capture_process_snapshot(pid: int) -> _ProcessSnapshot | None:
+    """Capture one psutil process object and its immutable PID identity."""
+    try:
+        process = psutil.Process(pid)
+        create_time = process.create_time()
+        argv = tuple(process.cmdline())
+        executable = process.exe()
+        if not process.is_running():
+            return None
+    except (psutil.NoSuchProcess, psutil.ZombieProcess, psutil.AccessDenied, OSError):
+        return None
+    if not argv or not executable:
+        return None
+    return _ProcessSnapshot(
+        pid=pid,
+        create_time=create_time,
+        argv=argv,
+        executable=executable,
+        process=process,
+    )
+
+
+def _snapshot_is_current(snapshot: _ProcessSnapshot) -> bool:
+    try:
+        return (
+            snapshot.process.pid == snapshot.pid
+            and snapshot.process.create_time() == snapshot.create_time
+            and tuple(snapshot.process.cmdline()) == snapshot.argv
+            and snapshot.process.exe() == snapshot.executable
+            and snapshot.process.is_running()
+        )
+    except (psutil.NoSuchProcess, psutil.ZombieProcess, psutil.AccessDenied, OSError):
+        return False
 
 
 def _process_cmdline(pid: int) -> str:
     try:
         import psutil
-        return " ".join(psutil.Process(pid).cmdline())
+        return shlex.join(psutil.Process(pid).cmdline())
     except Exception:
         try:
             proc = subprocess.run(
@@ -309,19 +407,34 @@ def _process_cmdline(pid: int) -> str:
             return ""
 
 
-def _terminate_process(pid: int) -> None:
+def _terminate_process(pid: int, *, expected_snapshot: _ProcessSnapshot | None = None) -> bool:
+    snapshot = expected_snapshot or _capture_process_snapshot(pid)
+    if (
+        snapshot is None
+        or snapshot.pid != pid
+        or not _is_tags_web_process_snapshot(snapshot)
+        or not _snapshot_is_current(snapshot)
+    ):
+        return False
     try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
+        snapshot.process.terminate()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return False
+    except (psutil.AccessDenied, OSError):
+        return False
     for _ in range(50):
-        if not _process_exists(pid):
-            return
+        if not _snapshot_is_current(snapshot):
+            return True
         time.sleep(0.1)
+    if not _snapshot_is_current(snapshot):
+        return True
     try:
-        os.kill(pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
+        snapshot.process.kill()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess):
+        return True
+    except (psutil.AccessDenied, OSError):
+        return False
+    return True
 
 
 def _read_pid_path(path: Path) -> int | None:
@@ -353,8 +466,8 @@ def _build_daemon_cmd(host: str, port: int, log_level: str) -> list[str]:
 
     cli_executable = _find_cli_executable()
     if cli_executable is None:
-        print_safe("[red][ERROR] Unable to find an executable tag-manager launcher for daemon mode.[/red]")
-        print_safe("[dim]Run `bluearch-core start --daemon` to start the managed dashboard.[/dim]")
+        print_safe("[red][ERROR] Unable to find an executable bluearch-aws-tags launcher for daemon mode.[/red]")
+        print_safe("[dim]Run `bluearch-aws-core start --daemon` to start the managed dashboard.[/dim]")
         raise typer.Exit(1)
 
     return [
@@ -384,18 +497,21 @@ def _is_python_executable(executable: str) -> bool:
 
 def _find_cli_executable() -> str | None:
     """Find the user-facing CLI launcher instead of assuming sys.executable works."""
-    candidates = [sys.argv[0], shutil.which("tag-manager")]
+    candidates = [sys.argv[0], shutil.which(PUBLIC_TAGS_EXECUTABLE)]
 
     if not _is_python_executable(sys.executable):
         candidates.append(sys.executable)
 
     for candidate in candidates:
-        if not candidate:
-            continue
-        path = shutil.which(candidate) if not os.path.isabs(candidate) else candidate
-        if path and os.path.isfile(path) and os.access(path, os.X_OK):
-            return path
+        resolved = resolve_public_tags_executable(candidate)
+        if resolved:
+            return resolved
     return None
+
+
+def _is_public_tags_executable(candidate: str | None) -> bool:
+    """Return whether a launcher resolves to the canonical public target."""
+    return resolve_public_tags_executable(candidate) is not None
 
 
 def _ensure_core_dependency() -> None:
@@ -404,11 +520,18 @@ def _ensure_core_dependency() -> None:
 
         check_core_dependency("tag-manager")
     except Exception as exc:
-        print_safe("[red][ERROR] bluearch-core is required before starting the Tag Manager web dashboard.[/red]")
+        print_safe("[red][ERROR] bluearch-aws-core is required before starting the Tags web dashboard.[/red]")
         print_safe(f"[dim]{exc}[/dim]")
-        print_safe(f"[cyan]Required version:[/cyan] bluearch-core >= {MINIMUM_CORE_VERSION}")
-        print_safe("[cyan]Start it with:[/cyan] bluearch-core start --daemon")
-        print_safe("[cyan]Install it with:[/cyan] brew install bluearchio/tap/bluearch-aws-core")
+        print_safe(f"[cyan]Required version:[/cyan] bluearch-aws-core >= {MINIMUM_CORE_VERSION}")
+        print_safe("[cyan]Start it with:[/cyan] bluearch-aws-core start --daemon")
+        print_safe(
+            "[cyan]Trust only the Core formula first:[/cyan] "
+            f"brew trust --formula {PUBLIC_CORE_FORMULA}"
+        )
+        print_safe(
+            "[cyan]After trust succeeds, install it with:[/cyan] "
+            f"brew install {PUBLIC_CORE_FORMULA}"
+        )
         raise typer.Exit(1)
 
 
@@ -416,7 +539,7 @@ def _ensure_core_dependency() -> None:
 # Commands
 # ---------------------------------------------------------------------------
 
-@web_app.command("start")
+@web_app.command("start", hidden=True)
 def start(
     host: str = typer.Option("127.0.0.1", "--host", "-H", help="Bind address"),
     port: int = typer.Option(8096, "--port", "-p", help="Port number"),
@@ -432,7 +555,7 @@ def start(
     Interactive API docs available at http://<host>:<port>/docs
 
     Example:
-        bluearch-core start --daemon
+        bluearch-aws-core start --daemon
     """
     _ensure_core_managed_start()
     _ensure_core_dependency()
@@ -458,7 +581,7 @@ def start(
             print_safe("[yellow]Existing Tag Manager web server detected; restarting fixed SSO ports.[/yellow]")
         else:
             print_safe(f"[red][ERROR] Web server already running (PID: {existing_pid})[/red]")
-            print_safe("Use [cyan]tag-manager web stop[/cyan] to stop it first.")
+            print_safe("Use [cyan]bluearch-aws-tags web stop[/cyan] to stop it first.")
             raise typer.Exit(1)
 
     port = _resolve_start_port(host, port)
@@ -550,7 +673,7 @@ def _dev_command(
             print_safe("[yellow]Existing Tag Manager web server detected; restarting fixed SSO ports.[/yellow]")
         else:
             print_safe(f"[red][ERROR] Web server already running (PID: {existing_pid})[/red]")
-            print_safe("Use [cyan]tag-manager web stop[/cyan] to stop it first.")
+            print_safe("Use [cyan]bluearch-aws-tags web stop[/cyan] to stop it first.")
             raise typer.Exit(1)
 
     port = _resolve_start_port(host, port)
@@ -656,26 +779,14 @@ def stop():
 
     print_safe(f"Stopping web server (PID: {pid})...")
 
-    # Graceful shutdown
-    try:
-        os.kill(pid, signal.SIGTERM)
-    except ProcessLookupError:
+    snapshot = _capture_process_snapshot(pid)
+    if snapshot is None or not _is_tags_web_process_snapshot(snapshot) or not _terminate_process(
+        pid,
+        expected_snapshot=snapshot,
+    ):
         _remove_pid()
-        print_safe("Web server already stopped.")
-        raise typer.Exit(0)
-
-    # Wait up to 5 seconds for graceful exit
-    for _ in range(50):
-        time.sleep(0.1)
-        if not _process_exists(pid):
-            break
-    else:
-        # Force kill if still alive
-        print_safe("[yellow]Graceful shutdown timed out, forcing...[/yellow]")
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        print_safe("[red]Web process identity changed before it could be stopped; no signal was sent.[/red]")
+        raise typer.Exit(1)
 
     _remove_pid()
     print_safe(f"[green]Web server stopped (PID: {pid})[/green]")
@@ -722,8 +833,8 @@ def status():
 def _ensure_core_managed_start() -> None:
     if os.environ.get("BLUEARCH_CORE_MANAGED_WEB_START") == "1":
         return
-    print_safe("[yellow][WARN] Tag Manager web startup is managed by bluearch-core.[/yellow]")
-    print_safe("[cyan]Run:[/cyan] bluearch-core start --daemon")
+    print_safe("[yellow][WARN] Tags web startup is managed by bluearch-aws-core.[/yellow]")
+    print_safe("[cyan]Run:[/cyan] bluearch-aws-core start --daemon")
     raise typer.Exit(1)
 
 
@@ -745,7 +856,21 @@ def _start_daemon(host: str, port: int, log_level: str) -> None:
             env=_daemon_child_env(),
         )
 
-    _wait_for_daemon_ready(proc, host, port, current_log)
+    process_snapshot = _capture_process_snapshot(proc.pid)
+    if process_snapshot is None or not _is_tags_web_process_snapshot(process_snapshot):
+        print_safe(
+            "[red][ERROR] Could not establish a stable identity for the spawned Tags web process; "
+            "no signal was sent.[/red]"
+        )
+        raise typer.Exit(1)
+
+    _wait_for_daemon_ready(
+        proc,
+        host,
+        port,
+        current_log,
+        expected_snapshot=process_snapshot,
+    )
 
     # The child writes its own PID file via foreground start path,
     # but write the subprocess PID for immediate feedback
@@ -756,7 +881,7 @@ def _start_daemon(host: str, port: int, log_level: str) -> None:
     print_safe(f"  URL:     [cyan]http://{_display_host(host)}:{port}[/cyan]")
     print_safe(f"  API docs: [cyan]http://{_display_host(host)}:{port}/docs[/cyan]")
     print_safe(f"  Log:     {LOG_FILE}")
-    print_safe(f"  Stop:    [cyan]tag-manager web stop[/cyan]")
+    print_safe(f"  Stop:    [cyan]bluearch-aws-tags web stop[/cyan]")
     print_safe("")
 
 
@@ -768,7 +893,14 @@ def _daemon_cwd() -> str:
     return os.fspath(Path(__file__).resolve().parents[2])
 
 
-def _wait_for_daemon_ready(proc: subprocess.Popen, host: str, port: int, log_path: Path) -> None:
+def _wait_for_daemon_ready(
+    proc: subprocess.Popen,
+    host: str,
+    port: int,
+    log_path: Path,
+    *,
+    expected_snapshot: _ProcessSnapshot,
+) -> None:
     """Wait until the child serves health, or fail before reporting success."""
     health_url = f"http://{_test_host(host)}:{port}/api/v1/system/health"
     deadline = time.monotonic() + _web_ready_timeout_seconds()
@@ -784,7 +916,7 @@ def _wait_for_daemon_ready(proc: subprocess.Popen, host: str, port: int, log_pat
             pass
         time.sleep(WEB_READY_POLL_INTERVAL_SECONDS)
 
-    _terminate_process(proc.pid)
+    _terminate_process(proc.pid, expected_snapshot=expected_snapshot)
     print_safe(f"[red][ERROR] Server did not become ready at {health_url}. Check log: {log_path}[/red]")
     raise typer.Exit(1)
 

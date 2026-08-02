@@ -19,7 +19,7 @@ You should see 8 Lambda functions + the generator.
 ### 3. Clear any existing demo policies
 
 ```bash
-tag-manager lifecycle policies delete
+bluearch-aws-tags lifecycle policies delete
 ```
 
 ---
@@ -44,7 +44,7 @@ aws lambda list-functions --query "Functions[?starts_with(FunctionName, 'lifecyc
 **Say:** "First, let's scan AWS to discover all resources and import them into Tag Manager."
 
 ```bash
-tag-manager lifecycle scan --discover --services lambda,sns,sqs -y
+bluearch-aws-tags lifecycle scan --discover --services lambda,sns,sqs -y
 ```
 
 > Note: `-y` skips interactive prompts. Without it, the CLI will ask about discovery and multi-account options.
@@ -57,7 +57,7 @@ tag-manager lifecycle scan --discover --services lambda,sns,sqs -y
 **Say:** "Now let's create a lifecycle policy. We'll use the 'contains' operator to catch any resource where the Environment tag contains 'demo'."
 
 ```bash
-tag-manager lifecycle policies create
+bluearch-aws-tags lifecycle policies create
 ```
 
 **Follow the wizard:**
@@ -83,7 +83,7 @@ tag-manager lifecycle policies create
 **Say:** "Let's see our new policy."
 
 ```bash
-tag-manager lifecycle policies list
+bluearch-aws-tags lifecycle policies list
 ```
 
 
@@ -92,7 +92,7 @@ tag-manager lifecycle policies list
 **Say:** "Now let's scan to find all resources matching our policy."
 
 ```bash
-tag-manager lifecycle scan -y
+bluearch-aws-tags lifecycle scan -y
 ```
 
 **Say:** "Look - it found all the demo resources! They match our policy because their Environment tag contains 'demo'. Notice they have 'No TTL' set yet."
@@ -103,7 +103,7 @@ tag-manager lifecycle scan -y
 **Say:** "Let's apply a 7-day TTL to these resources. This will tag them in AWS with expiration metadata."
 
 ```bash
-tag-manager lifecycle set-ttl
+bluearch-aws-tags lifecycle set-ttl
 ```
 
 **Say:** "Confirm with 'y'. Now all matching resources have a 7-day TTL. The CLI applied AWS tags directly to the resources."
@@ -125,7 +125,7 @@ aws lambda list-tags --resource $(aws lambda get-function --function-name lifecy
 **Say:** "Let's scan again to see the resources with their new TTL."
 
 ```bash
-tag-manager lifecycle scan -y
+bluearch-aws-tags lifecycle scan -y
 ```
 
 **Say:** "Now all resources show their TTL status - 6 or 7 days remaining."
@@ -153,13 +153,13 @@ aws lambda invoke --function-name lifecycle-demo-resource-generator /tmp/respons
 **Say:** "Let's scan again. Our policy will automatically catch the newly created resource."
 
 ```bash
-tag-manager lifecycle scan --discover --services lambda -y
+bluearch-aws-tags lifecycle scan --discover --services lambda -y
 ```
 
 **Say:** "Look - the new 'data-processor' function was discovered and matched by our policy, but it has 'No TTL' because it was just created. We can apply TTL again to catch it."
 
 ```bash
-tag-manager lifecycle set-ttl
+bluearch-aws-tags lifecycle set-ttl
 ```
 
 
@@ -168,7 +168,7 @@ tag-manager lifecycle set-ttl
 **Say:** "For resources approaching expiration, we have an interactive review mode."
 
 ```bash
-tag-manager lifecycle review --include-active
+bluearch-aws-tags lifecycle review --include-active
 ```
 
 **Say:** "Here you can extend TTL, protect resources from deletion, or mark them for immediate deletion."
@@ -182,7 +182,7 @@ Press `s` to skip through or `q` to quit.
 **Say:** "Finally, let me show the actual deletion capability."
 
 ```bash
-tag-manager lifecycle delete --dry-run
+bluearch-aws-tags lifecycle delete --dry-run
 ```
 
 **Say:** "The dry-run shows what would be deleted. In production, the delete command actually removes the AWS resources."
@@ -190,7 +190,7 @@ tag-manager lifecycle delete --dry-run
 **Say:** "Now let's clean up the demo resources."
 
 ```bash
-tag-manager lifecycle delete
+bluearch-aws-tags lifecycle delete
 ```
 
 ## Key Points to Emphasize

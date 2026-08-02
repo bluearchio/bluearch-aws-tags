@@ -4,7 +4,7 @@ set -euo pipefail
 
 BINARY_NAME="${BINARY_NAME:-bluearch-aws-tags}"
 PACKAGE_NAME="${PACKAGE_NAME:-tag_manager_cli}"
-ENTRY_IMPORT="${ENTRY_IMPORT:-tag_manager_cli.main}"
+ENTRY_IMPORT="${ENTRY_IMPORT:-tag_manager_cli.entrypoint}"
 APP_OBJECT="${APP_OBJECT:-cli}"
 if [ -z "${ONEFILE_TEMPDIR:-}" ]; then
   ONEFILE_TEMPDIR="{HOME}/.bluearch-aws-tags/bin"
@@ -84,5 +84,16 @@ if [ ! -x "dist/$BINARY_NAME" ]; then
 fi
 
 chmod 755 "dist/$BINARY_NAME"
-"dist/$BINARY_NAME" --version
+EXPECTED_VERSION="$(python -c 'from tag_manager_cli import __version__; print(__version__)')"
+VERSION_HOME="$(mktemp -d)"
+trap 'rm -rf "$VERSION_HOME"; cleanup' EXIT
+VERSION_OUTPUT="$(HOME="$VERSION_HOME" "dist/$BINARY_NAME" --version)"
+[[ "$VERSION_OUTPUT" == "$BINARY_NAME $EXPECTED_VERSION (production)" ]] || {
+  echo "ERROR: unexpected version output: $VERSION_OUTPUT" >&2
+  exit 1
+}
+[[ ! -e "$VERSION_HOME/.tag-manager" ]] || {
+  echo "ERROR: version probe created state in $VERSION_HOME" >&2
+  exit 1
+}
 echo "[OK] Built dist/$BINARY_NAME"

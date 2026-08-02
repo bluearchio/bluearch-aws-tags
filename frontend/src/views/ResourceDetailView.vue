@@ -117,7 +117,7 @@
             @click="handleRemoveTags"
           >
             <i class="pi pi-times"></i>
-            {{ removingTags ? 'Removing...' : 'Remove tag-manager tags' }}
+            {{ removingTags ? 'Removing...' : 'Remove BlueArch-managed tags' }}
           </button>
         </div>
         <table class="tags-table">

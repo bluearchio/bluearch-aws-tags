@@ -100,10 +100,10 @@ def interactive_chat(
     Start interactive chat with AWS AI assistant.
 
     Examples:
-        tag-manager ask chat                    # Uses latest Haiku (cheapest)
-        tag-manager ask chat --model sonnet     # Uses latest Sonnet
-        tag-manager ask chat --model haiku      # Uses latest Haiku
-        tag-manager ask chat --model us.anthropic.claude-3-5-sonnet-20241022-v2:0
+        bluearch-aws-tags ask chat                    # Uses latest Haiku (cheapest)
+        bluearch-aws-tags ask chat --model sonnet     # Uses latest Sonnet
+        bluearch-aws-tags ask chat --model haiku      # Uses latest Haiku
+        bluearch-aws-tags ask chat --model us.anthropic.claude-3-5-sonnet-20241022-v2:0
 
     Model Shortcuts:
         haiku  - Latest Haiku (cheapest, fastest) [DEFAULT]
@@ -132,9 +132,9 @@ def question(
     Ask a single question about your AWS account.
 
     Examples:
-        tag-manager ask question "What EC2 instances are running?"
-        tag-manager ask question "Show me my costs last month"
-        tag-manager ask question "Which resources are missing tags?"
+        bluearch-aws-tags ask question "What EC2 instances are running?"
+        bluearch-aws-tags ask question "Show me my costs last month"
+        bluearch-aws-tags ask question "Which resources are missing tags?"
     """
     try:
         formatter = AIOutputFormatter(console)
@@ -277,7 +277,7 @@ def check_access(region: str = typer.Option("us-east-1", "--region", "-r", help=
             )
 
             console.print("[green]✅ SUCCESS! You have access to Claude models![/green]")
-            console.print("[green]You can start using: tag-manager ask chat[/green]")
+            console.print("[green]You can start using: bluearch-aws-tags ask chat[/green]")
 
         except ClientError as e:
             error_code = e.response['Error']['Code']
@@ -291,7 +291,7 @@ def check_access(region: str = typer.Option("us-east-1", "--region", "-r", help=
                 console.print("3. Enable: Anthropic Claude 3.5 Sonnet")
                 console.print("4. Fill out the use case form")
                 console.print("5. Wait 2-15 minutes for activation\n")
-                console.print(f"[yellow]Or run: tag-manager ask setup-bedrock[/yellow]")
+                console.print("[yellow]Or run: bluearch-aws-tags ask setup-bedrock[/yellow]")
 
             elif error_code == 'AccessDeniedException':
                 console.print("\n[red]❌ PERMISSION DENIED[/red]")
@@ -335,8 +335,8 @@ def enable_access(
     3. Enables model access in your account
 
     Examples:
-        tag-manager ask enable-access
-        tag-manager ask enable-access --model us.anthropic.claude-haiku-4-5-20251001-v1:0
+        bluearch-aws-tags ask enable-access
+        bluearch-aws-tags ask enable-access --model us.anthropic.claude-haiku-4-5-20251001-v1:0
     """
     try:
         from ..integrations.aws_assistant import BedrockAWSAssistant
@@ -356,10 +356,10 @@ def enable_access(
 
         if success:
             console.print("[green]You can now use the AI assistant![/green]")
-            console.print(f"[green]Try: tag-manager ask question \"How many EC2 instances do I have?\"[/green]")
+            console.print("[green]Try: bluearch-aws-tags ask question \"How many EC2 instances do I have?\"[/green]")
         else:
             console.print("[yellow]Automatic enablement failed. Please use manual setup.[/yellow]")
-            console.print("[yellow]Run: tag-manager ask setup-bedrock[/yellow]")
+            console.print("[yellow]Run: bluearch-aws-tags ask setup-bedrock[/yellow]")
             raise typer.Exit(1)
 
     except Exception as e:
@@ -418,7 +418,7 @@ Anthropic requires a brief use case description:
 Run this command to check:
 
 ```bash
-tag-manager ask check-access
+bluearch-aws-tags ask check-access
 ```
 
 ## Step 6: Start Using!
@@ -427,10 +427,10 @@ Once enabled:
 
 ```bash
 # Interactive chat
-tag-manager ask chat
+bluearch-aws-tags ask chat
 
 # Single question
-tag-manager ask question "What EC2 instances are running?"
+bluearch-aws-tags ask question "What EC2 instances are running?"
 ```
 
 ## Troubleshooting
@@ -458,7 +458,7 @@ tag-manager ask question "What EC2 instances are running?"
 
 ## Need Help?
 
-Run: `tag-manager ask check-access` to check for issues
+Run: `bluearch-aws-tags ask check-access` to check for issues
     """
 
     console.print(Panel(
@@ -468,7 +468,7 @@ Run: `tag-manager ask check-access` to check for issues
         padding=(1, 2)
     ))
 
-    console.print("\n[green]After setup, verify with:[/green] tag-manager ask check-access\n")
+    console.print("\n[green]After setup, verify with:[/green] bluearch-aws-tags ask check-access\n")
 
 
 # Callback removed - now using ask_main() defined earlier with custom help format

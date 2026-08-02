@@ -121,7 +121,7 @@ def db_backup(
     """Create a backup of the database."""
     console.print("[INFO] Database backups are owned by bluearch-core.")
     destination = f" --destination {output}" if output else ""
-    console.print(f"[cyan]bluearch-core db backup{destination}[/cyan]")
+    console.print(f"[cyan]bluearch-aws-core db backup{destination}[/cyan]")
 
 
 @database_app.command("optimize")

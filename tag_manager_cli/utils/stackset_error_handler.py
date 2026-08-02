@@ -77,7 +77,7 @@ class StackSetErrorHandler:
             'category': 'not_found',
             'solutions': [
                 'The StackSet does not exist yet',
-                'Run: tag-manager accounts setup',
+                'Run: bluearch-aws-tags setup multi-account',
                 'Or check the StackSet name is correct'
             ]
         },

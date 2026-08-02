@@ -163,7 +163,7 @@ def format_quick_create_instructions(
         "3. Check 'I acknowledge that AWS CloudFormation might create IAM resources'",
         "4. Click 'Create stack'",
         "5. Wait for the stack to complete (usually 1-2 minutes)",
-        "6. Run 'tag-manager setup assume-role' to configure the CLI",
+        "6. Run 'bluearch-aws-tags setup assume-role' to configure the CLI",
         "",
         "Quick Create URL:",
         "-" * 70,

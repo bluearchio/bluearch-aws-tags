@@ -346,7 +346,7 @@ class SlackNotificationService:
                 "type": "section",
                 "text": {
                     "type": "mrkdwn",
-                    "text": "*Actions:* Run `tag-manager lifecycle review` to extend, protect, or delete these resources.",
+                    "text": "*Actions:* Run `bluearch-aws-tags lifecycle review` to extend, protect, or delete these resources.",
                 },
             }
         )
@@ -438,7 +438,7 @@ class SlackNotificationService:
                     "type": "section",
                     "text": {
                         "type": "mrkdwn",
-                        "text": "*Actions:* Run `tag-manager lifecycle review` or `tag-manager lifecycle scan` to manage resources.",
+                        "text": "*Actions:* Run `bluearch-aws-tags lifecycle review` or `bluearch-aws-tags lifecycle scan` to manage resources.",
                     },
                 }
             )

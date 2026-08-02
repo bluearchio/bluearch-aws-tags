@@ -62,7 +62,7 @@ Stop zombie resources from eating your AWS budget!
 - Helps you review and clean up resources
 
 [bold green]Recommended: Run the lifecycle wizard[/bold green]
-   [cyan]tag-manager lifecycle wizard[/cyan]
+   [cyan]bluearch-aws-tags lifecycle wizard[/cyan]
 
 The wizard will guide you through:
 - Creating lifecycle policies
@@ -77,7 +77,7 @@ The wizard will guide you through:
 
     try:
         if not Confirm.ask("Ready to get started?", default=True):
-            console.print("[yellow]Setup cancelled. You can run the wizard anytime with: tag-manager lifecycle wizard[/yellow]")
+            console.print("[yellow]Setup cancelled. You can run the wizard anytime with: bluearch-aws-tags lifecycle wizard[/yellow]")
             raise typer.Exit()
     except EOFError:
         console.print("[yellow]Continuing with automated setup (no input available)[/yellow]")
@@ -125,14 +125,14 @@ def check_prerequisites() -> Dict[str, bool]:
             progress.update(task, description="AWS authentication failed - ERROR")
         
         # Core runtime check
-        progress.update(task, description="Checking bluearch-core...")
+        progress.update(task, description="Checking bluearch-aws-core...")
         try:
             request_core("GET", "/api/v1/core/health", service_token=False, timeout=2.0)
             checks["database"] = True
-            progress.update(task, description="bluearch-core - OK")
+            progress.update(task, description="bluearch-aws-core - OK")
         except Exception as e:
             checks["database"] = False
-            progress.update(task, description=f"bluearch-core check failed - ERROR")
+            progress.update(task, description=f"bluearch-aws-core check failed - ERROR")
     
     # Display results
     results_table = Table(title="Prerequisites Check", show_header=True, header_style="bold magenta")
@@ -143,7 +143,7 @@ def check_prerequisites() -> Dict[str, bool]:
     status_map = {
         "aws_sdk": ("AWS SDK", "OK" if checks.get("aws_sdk") else "ERROR", "" if checks.get("aws_sdk") else "Install boto3: pip install boto3"),
         "aws_auth": ("AWS Authentication", "OK" if checks.get("aws_auth") else "WARN", "" if checks.get("aws_auth") else "Configure AWS profile: aws configure sso"),
-        "database": ("BlueArch Core", "OK" if checks.get("database") else "ERROR", "" if checks.get("database") else "Start bluearch-core: bluearch-core start --daemon")
+        "database": ("BlueArch Core", "OK" if checks.get("database") else "ERROR", "" if checks.get("database") else "Start bluearch-aws-core: bluearch-aws-core start --daemon")
     }
     
     for key, (component, status, action) in status_map.items():
@@ -240,10 +240,10 @@ def discover_initial_resources():
     
     try:
         if not Confirm.ask("Start resource discovery?", default=True):
-            console.print("[yellow]Skipping resource discovery. You can run it later with: tag-manager tags scan[/yellow]")
+            console.print("[yellow]Skipping resource discovery. You can run it later with: bluearch-aws-tags discover all[/yellow]")
             return
     except EOFError:
-        console.print("[yellow]Skipping resource discovery (no input available). You can run it later with: tag-manager tags scan[/yellow]")
+        console.print("[yellow]Skipping resource discovery (no input available). You can run it later with: bluearch-aws-tags discover all[/yellow]")
         return
     
     with Progress(
@@ -353,7 +353,7 @@ def discover_initial_resources():
             
             # Store discovered resources in database
             if discovered_resources:
-                progress.update(task, description="Storing resources in bluearch-core...")
+                progress.update(task, description="Storing resources in bluearch-aws-core...")
                 for resource_data in discovered_resources:
                     try:
                         payload = resource_payload(resource_data)
@@ -384,7 +384,7 @@ def discover_initial_resources():
             
         except Exception as e:
             console.print(f"[red]Discovery failed: {e}[/red]")
-            console.print("[yellow]You can run discovery later with: tag-manager tags scan[/yellow]")
+            console.print("[yellow]You can run discovery later with: bluearch-aws-tags discover all[/yellow]")
 
 
 def setup_initial_tagging_rules():
@@ -411,7 +411,7 @@ def setup_initial_tagging_rules():
         choice = "1"
     
     if choice == "4":
-        console.print("[yellow]Skipping rule setup. You can add rules later with: tag-manager tags rules[/yellow]")
+        console.print("[yellow]Skipping rule setup. You can add rules later with: bluearch-aws-tags lifecycle policies create[/yellow]")
         return None
     
     # Load appropriate rules
@@ -463,7 +463,7 @@ def setup_initial_tagging_rules():
     
     except Exception as e:
         console.print(f"[red]Failed to load rules: {e}[/red]")
-        console.print("[yellow]You can set up rules later with: tag-manager tags rules[/yellow]")
+        console.print("[yellow]You can set up rules later with: bluearch-aws-tags lifecycle policies create[/yellow]")
         return None
 
 
@@ -560,7 +560,7 @@ def run_enforcement_preview():
                         console.print()
 
                     console.print(f"[bold]Summary:[/bold] Would add governance tags to {len(governance_resources)} resources")
-                    console.print("[dim]Use 'tag-manager tags apply --auto' to apply comprehensive governance tags.[/dim]")
+                    console.print("[dim]Use 'bluearch-aws-tags lifecycle wizard' to apply your lifecycle policy.[/dim]")
                 else:
                     console.print("[green]All resources have governance tags![/green]")
             else:
@@ -600,7 +600,7 @@ def apply_initial_tags():
             for rule in list_objects("tag-manager", "tagging-rules", filters=[("enabled", "true")])
         ]
         if not rules:
-            console.print("[yellow]No tagging rules enabled. Use 'tag-manager tags rules load' first.[/yellow]")
+            console.print("[yellow]No tagging rules enabled. Use 'bluearch-aws-tags lifecycle policies create' first.[/yellow]")
             return
 
         if not untagged_resources:
@@ -617,7 +617,7 @@ def apply_initial_tags():
                 continue_governance = True
 
             if not continue_governance:
-                console.print("[dim]Setup complete. You can run governance tagging later with: tag-manager tags apply --auto[/dim]")
+                console.print("[dim]Setup complete. You can run lifecycle setup later with: bluearch-aws-tags lifecycle wizard[/dim]")
                 return
 
             # Switch to governance tagging mode
@@ -707,7 +707,7 @@ def apply_initial_tags():
             return
 
         if action == "skip":
-            console.print("[yellow]Skipping tag application. You can apply tags later with: tag-manager tags apply --auto[/yellow]")
+            console.print("[yellow]Skipping tag application. You can continue later with: bluearch-aws-tags lifecycle wizard[/yellow]")
             return
         elif action == "customize":
             console.print("[yellow]Advanced customization not implemented yet. Using default tags.[/yellow]")
@@ -760,11 +760,11 @@ def apply_initial_tags():
             console.print(f"[green]Successfully tagged: {success_count} resources[/green]")
             if error_count > 0:
                 console.print(f"[red]Failed to tag: {error_count} resources[/red]")
-            console.print("[dim]All changes have been applied to both AWS and bluearch-core.[/dim]")
+            console.print("[dim]All changes have been applied to both AWS and bluearch-aws-core.[/dim]")
     
     except Exception as e:
         console.print(f"[yellow]Could not apply tags: {e}[/yellow]")
-        console.print("[dim]You can apply tags manually with: tag-manager tags apply --auto[/dim]")
+        console.print("[dim]You can apply tags manually with: bluearch-aws-tags lifecycle wizard[/dim]")
 
 
 def run_compliance_check():
@@ -794,7 +794,7 @@ def run_compliance_check():
 [yellow]Compliance Rate:[/yellow] {compliance_rate:.1f}%
 
 {"[green]Great job! All resources are tagged![/green]" if compliance_rate == 100 else
- "[yellow]Some resources still need tags. Use 'tag-manager tags apply --auto' to fix.[/yellow]" if compliance_rate > 50 else
+ "[yellow]Some resources still need tags. Use 'bluearch-aws-tags lifecycle wizard' to fix.[/yellow]" if compliance_rate > 50 else
  "[red]Many resources are untagged. Consider running automated tagging.[/red]"}
 """
         console.print(Panel(summary, title="Compliance Status", border_style="cyan"))
@@ -809,24 +809,24 @@ def show_next_steps():
 [bold green]Setup Complete![/bold green] Here are your recommended next steps:
 
 [bold yellow]1. Run the lifecycle wizard (Recommended)[/bold yellow]
-   [cyan]tag-manager lifecycle wizard[/cyan]   # Complete guided workflow
+   [cyan]bluearch-aws-tags lifecycle wizard[/cyan]   # Complete guided workflow
 
 [bold yellow]2. Or follow the manual workflow:[/bold yellow]
-   [cyan]tag-manager lifecycle policies create[/cyan]  # Define resource rules
-   [cyan]tag-manager lifecycle scan[/cyan]             # Find matching resources
-   [cyan]tag-manager lifecycle set-ttl[/cyan]          # Apply TTL tags
-   [cyan]tag-manager lifecycle review[/cyan]           # Manage expiring resources
+   [cyan]bluearch-aws-tags lifecycle policies create[/cyan]  # Define resource rules
+   [cyan]bluearch-aws-tags lifecycle scan[/cyan]             # Find matching resources
+   [cyan]bluearch-aws-tags lifecycle set-ttl[/cyan]          # Apply TTL tags
+   [cyan]bluearch-aws-tags lifecycle review[/cyan]           # Manage expiring resources
 
 [bold yellow]3. Daily operations[/bold yellow]
-   [cyan]tag-manager lifecycle scan --expiring 7[/cyan]  # Resources expiring soon
-   [cyan]tag-manager lifecycle review[/cyan]             # Interactive review
-   [cyan]tag-manager lifecycle notify[/cyan]             # Send Slack alerts
+   [cyan]bluearch-aws-tags lifecycle scan --expiring 7[/cyan]  # Resources expiring soon
+   [cyan]bluearch-aws-tags lifecycle review[/cyan]             # Interactive review
+   [cyan]bluearch-aws-tags lifecycle notify[/cyan]             # Send Slack alerts
 
 [bold yellow]4. AI assistant[/bold yellow]
-   [cyan]tag-manager ask "what resources are expiring?"[/cyan]
-   [cyan]tag-manager ask chat[/cyan]                   # Interactive chat
+   [cyan]bluearch-aws-tags ask "what resources are expiring?"[/cyan]
+   [cyan]bluearch-aws-tags ask chat[/cyan]                   # Interactive chat
 
-[dim]For help with any command, add --help (e.g., tag-manager lifecycle --help)[/dim]
+[dim]For help with any command, add --help (e.g., bluearch-aws-tags lifecycle --help)[/dim]
 """
 
     console.print(Panel(next_steps_text, title="What's Next?", border_style="green"))
@@ -876,5 +876,5 @@ def run_onboarding_wizard():
         raise typer.Exit()
     except Exception as e:
         console.print(f"\n[red]Setup failed: {e}[/red]")
-        console.print("[dim]You can restart the setup with: tag-manager setup[/dim]")
+        console.print("[dim]You can restart the setup with: bluearch-aws-tags setup[/dim]")
         raise typer.Exit(1)

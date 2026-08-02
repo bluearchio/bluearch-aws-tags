@@ -1,4 +1,4 @@
-"""CloudWatch alarm management service for tag-manager-cli.
+"""CloudWatch alarm management service for BlueArch AWS Tags.
 
 Provides CRUD operations for CloudWatch alarms with:
 - Tag-based alert routing via OwnerTeamEmail
@@ -112,7 +112,7 @@ class AlarmResult:
 
 
 class AlarmService:
-    """Service for managing CloudWatch alarms with tag-manager integration."""
+    """Service for managing CloudWatch alarms with bluearch-aws-tags integration."""
 
     def __init__(self):
         self._cloudwatch_client = None

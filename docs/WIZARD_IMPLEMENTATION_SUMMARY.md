@@ -8,7 +8,7 @@ Successfully completed Phase 2 of the AWS Organizations Tag Policy feature by im
 
 ### 1. Unified Wizard Command
 
-**Command:** `tag-manager policy wizard`
+**Command:** `bluearch-aws-tags policy wizard`
 
 Replaced the old `create-interactive` command with a comprehensive wizard that provides:
 - Interactive main menu with 5 operations
@@ -30,11 +30,11 @@ Replaced the old `create-interactive` command with a comprehensive wizard that p
 **Usage:**
 ```bash
 # Interactive menu mode
-tag-manager policy wizard
+bluearch-aws-tags policy wizard
 # Select [1] Create new policy
 
 # Direct mode
-tag-manager policy wizard --operation create
+bluearch-aws-tags policy wizard --operation create
 ```
 
 #### Update Policy Flow
@@ -48,11 +48,11 @@ tag-manager policy wizard --operation create
 **Usage:**
 ```bash
 # Interactive menu mode
-tag-manager policy wizard
+bluearch-aws-tags policy wizard
 # Select [2] Update existing policy
 
 # Direct mode with specific policy
-tag-manager policy wizard --operation update --policy-id pol-abc123
+bluearch-aws-tags policy wizard --operation update --policy-id pol-abc123
 ```
 
 #### Delete Policy Flow
@@ -65,11 +65,11 @@ tag-manager policy wizard --operation update --policy-id pol-abc123
 **Usage:**
 ```bash
 # Interactive menu mode
-tag-manager policy wizard
+bluearch-aws-tags policy wizard
 # Select [3] Delete policy
 
 # Direct mode with specific policy
-tag-manager policy wizard --operation delete --policy-id pol-abc123
+bluearch-aws-tags policy wizard --operation delete --policy-id pol-abc123
 ```
 
 #### Attach Policy Flow
@@ -83,11 +83,11 @@ tag-manager policy wizard --operation delete --policy-id pol-abc123
 **Usage:**
 ```bash
 # Interactive menu mode
-tag-manager policy wizard
+bluearch-aws-tags policy wizard
 # Select [4] Attach policy
 
 # Direct mode with specific policy
-tag-manager policy wizard --operation attach --policy-id pol-abc123
+bluearch-aws-tags policy wizard --operation attach --policy-id pol-abc123
 ```
 
 #### Detach Policy Flow
@@ -101,11 +101,11 @@ tag-manager policy wizard --operation attach --policy-id pol-abc123
 **Usage:**
 ```bash
 # Interactive menu mode
-tag-manager policy wizard
+bluearch-aws-tags policy wizard
 # Select [5] Detach policy
 
 # Direct mode with specific policy
-tag-manager policy wizard --operation detach --policy-id pol-abc123
+bluearch-aws-tags policy wizard --operation detach --policy-id pol-abc123
 ```
 
 ## Service Layer Enhancements
@@ -255,7 +255,7 @@ Before merging, test the following flows:
 
 ### Create Flow
 ```bash
-tag-manager policy wizard --operation create
+bluearch-aws-tags policy wizard --operation create
 # Test: Create policy with multiple tags
 # Test: Save to file
 # Test: Attach to targets
@@ -264,7 +264,7 @@ tag-manager policy wizard --operation create
 
 ### Update Flow
 ```bash
-tag-manager policy wizard --operation update
+bluearch-aws-tags policy wizard --operation update
 # Test: Update content only
 # Test: Update metadata only
 # Test: Update both
@@ -273,7 +273,7 @@ tag-manager policy wizard --operation update
 
 ### Delete Flow
 ```bash
-tag-manager policy wizard --operation delete
+bluearch-aws-tags policy wizard --operation delete
 # Test: Delete with attachments (auto-detach)
 # Test: Delete without attachments
 # Test: Cancel via wrong policy name
@@ -282,13 +282,13 @@ tag-manager policy wizard --operation delete
 
 ### Attach/Detach Flow
 ```bash
-tag-manager policy wizard --operation attach
+bluearch-aws-tags policy wizard --operation attach
 # Test: Attach to Root
 # Test: Attach to OU
 # Test: Attach to Account
 # Test: Multi-select targets
 
-tag-manager policy wizard --operation detach
+bluearch-aws-tags policy wizard --operation detach
 # Test: Detach from specific targets
 # Test: Detach from all targets
 # Test: Policy with no attachments
@@ -296,7 +296,7 @@ tag-manager policy wizard --operation detach
 
 ### Main Menu Flow
 ```bash
-tag-manager policy wizard
+bluearch-aws-tags policy wizard
 # Test: Navigate through all 5 options
 # Test: "Perform another operation?" loop
 # Test: Exit with Q

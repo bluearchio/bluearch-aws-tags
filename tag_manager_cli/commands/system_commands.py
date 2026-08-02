@@ -186,7 +186,7 @@ def show_system_status():
             print_safe("   [dim]aws sso login[/dim]")
             print_safe("   [dim]export AWS_PROFILE=your-profile[/dim]")
         if "ERROR" in db_status:
-            print_safe("   [dim]tag-manager database init[/dim]")
+            print_safe("   [dim]bluearch-aws-tags setup database[/dim]")
 
 
 @system_app.command("validate")
@@ -287,10 +287,10 @@ def validate_setup():
     
     if all_passed:
         print_success("\nOK All validations passed! System is ready to use.")
-        print_safe("Start with: [cyan]tag-manager interactive[/cyan] or [cyan]tag-manager tags scan[/cyan]")
+        print_safe("Start with: [cyan]bluearch-aws-tags interactive[/cyan] or [cyan]bluearch-aws-tags lifecycle scan[/cyan]")
     else:
         print_error("\nERROR Some validations failed. Please address the issues above.")
-        print_safe("For help: [cyan]bluearch-aws-tags system config[/cyan] or [cyan]bluearch-aws-tags --help[/cyan]")
+        print_safe("For help: [cyan]bluearch-aws-tags setup doctor[/cyan] or [cyan]bluearch-aws-tags --help[/cyan]")
 
 
 @system_app.command("reset")
@@ -323,7 +323,7 @@ def reset_system(
         print_warning(f"WARN Could not clear cache: {e}")
     
     print_warning("WARN Storage is owned by bluearch-core and was not reset by Tag Manager.")
-    print_safe("Use [cyan]bluearch-core db backup[/cyan] before any core storage reset operation.")
+    print_safe("Use [cyan]bluearch-aws-core db backup[/cyan] before any core storage reset operation.")
     
     # Remove config files if requested
     if not keep_config:
@@ -341,4 +341,4 @@ def reset_system(
                 print_success(f"OK Removed {config_file}")
     
     print_success("\nOK System reset complete!")
-    print_safe("Run validation: [cyan]tag-manager system validate[/cyan]")
+    print_safe("Run validation: [cyan]bluearch-aws-tags setup validate[/cyan]")

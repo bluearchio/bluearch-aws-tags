@@ -7,6 +7,7 @@ storing account enable/disable states in DynamoDB with local caching for offline
 
 import json
 import logging
+import os
 from typing import Dict, List, Optional, Any, Set
 from pathlib import Path
 from datetime import datetime, timezone
@@ -60,7 +61,8 @@ class DynamoDBStateService:
         self.sync_interval = 300  # 5 minutes
 
         # Ensure local directories exist
-        self.local_cache_file.parent.mkdir(parents=True, exist_ok=True)
+        if os.environ.get("TAG_MANAGER_SUPPRESS_STARTUP_STATE") != "1":
+            self.local_cache_file.parent.mkdir(parents=True, exist_ok=True)
 
         # Don't initialize DynamoDB here - wait until first use
 

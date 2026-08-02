@@ -46,6 +46,8 @@ class EnvironmentConfig:
     def _load_env_file(self):
         """Load environment variables from .env file."""
         if not self.env_file or not Path(self.env_file).exists():
+            if os.environ.get("TAG_MANAGER_SUPPRESS_STARTUP_STATE") == "1":
+                return
             # Only show warning on first run or when debugging
             try:
                 from .startup_messages import startup_messages

@@ -94,7 +94,7 @@ def my_command():
 ### Before: Duplicated Error Handling (OLD WAY)
 
 ```python
-@tags_app.command("scan")
+@lifecycle_app.command("scan")
 def scan_resources():
     try:
         # Check credentials manually
@@ -121,7 +121,7 @@ def scan_resources():
 ### After: Reusable Decorators (NEW WAY)
 
 ```python
-@tags_app.command("scan")
+@lifecycle_app.command("scan")
 @require_aws_credentials
 @require_database
 @handle_all_errors
@@ -141,7 +141,7 @@ def scan_resources():
 
 ---
 
-## Real-World Example: tags scan Command
+## Real-World Example: lifecycle scan Command
 
 ### Complete Implementation
 
@@ -152,7 +152,7 @@ from ..utils.error_handlers import (
     handle_all_errors
 )
 
-@tags_app.command("scan")
+@lifecycle_app.command("scan")
 @require_aws_credentials  # Validates credentials first
 @require_database         # Ensures database is initialized
 @handle_all_errors        # Catches and formats all errors
@@ -189,7 +189,7 @@ def scan_untagged_resources(
 
 1. **`@require_aws_credentials`** runs FIRST:
    ```bash
-   $ tags scan
+   $ bluearch-aws-tags lifecycle scan
    ERROR AWS credentials are not valid or have expired!
 
    Please refresh your AWS credentials:
@@ -204,7 +204,7 @@ def scan_untagged_resources(
    ERROR Database is not initialized or accessible!
 
    Please initialize the database:
-     tag-manager database init
+     bluearch-aws-tags setup database
    ```
 
 3. **`@handle_all_errors`** catches ANY unexpected errors:
@@ -212,7 +212,7 @@ def scan_untagged_resources(
    ERROR Unexpected error: [error details]
 
    If this problem persists, please report it:
-     https://github.com/bluearchio/tag-manager-cli/issues
+     https://github.com/bluearchio/bluearch-aws-tags/issues
    ```
 
 ---
@@ -243,7 +243,7 @@ def my_command():
 
 ```bash
 # Expire your AWS SSO token
-$ tags scan
+$ bluearch-aws-tags lifecycle scan
 
 # Output:
 ERROR AWS credentials are not valid or have expired!
@@ -256,19 +256,19 @@ Please refresh your AWS credentials:
 
 ```bash
 # After fresh database init with no resources
-$ tags scan
+$ bluearch-aws-tags lifecycle scan
 
 # Output:
 WARN No resources found in database!
 Run resource discovery first:
-  tag-manager tags discover
+  bluearch-aws-tags discover all
 ```
 
 ### Test Success
 
 ```bash
-# After aws sso login and tags discover
-$ tags scan
+# After aws sso login and resource discovery
+$ bluearch-aws-tags lifecycle scan
 
 # Output:
 ✓ Scanning resources...
@@ -332,7 +332,7 @@ def my_command():
 ## Commands Already Updated
 
 ### ✅ Complete
-- `tags scan` - Full decorator implementation with test coverage
+- `lifecycle scan` - Full decorator implementation with test coverage
 
 ### 🔄 In Progress
 - Other high-priority commands to be updated

@@ -19,7 +19,7 @@ Then we help you review, extend, or delete resources before they become zombies.
 ## CLI Structure (After Simplification)
 
 ```
-tag-manager
+bluearch-aws-tags
     |
     +-- lifecycle      <-- MAIN FEATURE (90% of what you'll use)
     |       |
@@ -63,7 +63,7 @@ tag-manager
 Just run this one command and follow the prompts:
 
 ```bash
-tag-manager lifecycle wizard
+bluearch-aws-tags lifecycle wizard
 ```
 
 The wizard will:
@@ -78,22 +78,22 @@ The wizard will:
 
 ```bash
 # 1. First time? Set up the CLI
-tag-manager setup wizard
+bluearch-aws-tags setup wizard
 
 # 2. COnfigure tagging policies
-tag-manager lifecycle policies create
+bluearch-aws-tags lifecycle policies create
 
 # 3. Scan your AWS resources
-tag-manager lifecycle scan
+bluearch-aws-tags lifecycle scan
 
 # 4. Apply TTL tags on resources catched by tagging policies(30 days for EC2 instances)
-tag-manager lifecycle set-ttl --services ec2 --ttl-days 30
+bluearch-aws-tags lifecycle set-ttl --services ec2 --ttl-days 30
 
 # 5. Review what's expiring
-tag-manager lifecycle review
+bluearch-aws-tags lifecycle review
 
 # 6. (Optional) Set up Slack notifications
-tag-manager lifecycle notify-setup
+bluearch-aws-tags lifecycle notify-setup
 ```
 
 ---
@@ -105,14 +105,14 @@ You can use **TWO types of policies** together (hybrid approach):
 ### 1. Local Lifecycle Policies (Default)
 - Quick setup, no AWS Org access needed
 - Stored locally in SQLite database
-- Create with: `tag-manager lifecycle policies create`
+- Create with: `bluearch-aws-tags lifecycle policies create`
 - Best for: Individual accounts, quick start
 
 ### 2. AWS Organizations Tag Policies (Enterprise)
 - Centralized governance across all accounts in your organization
 - Requires AWS Organizations access
-- Create with: `tag-manager policy create`
-- Check compliance: `tag-manager lifecycle scan --check-compliance`
+- Create with: `bluearch-aws-tags policy create`
+- Check compliance: `bluearch-aws-tags lifecycle scan --check-compliance`
 - Best for: Multi-account environments, enterprise compliance
 
 ### How They Work Together
@@ -128,13 +128,13 @@ When you run `lifecycle set-ttl`, resources are tagged with their policy source:
 **Workflow Example**:
 ```bash
 # Check which resources violate AWS Org Tag Policies
-tag-manager lifecycle scan --check-compliance
+bluearch-aws-tags lifecycle scan --check-compliance
 
 # Show only noncompliant resources
-tag-manager lifecycle scan --noncompliant
+bluearch-aws-tags lifecycle scan --noncompliant
 
 # Apply TTL to noncompliant resources only
-tag-manager lifecycle set-ttl --noncompliant --ttl-days 14
+bluearch-aws-tags lifecycle set-ttl --noncompliant --ttl-days 14
 ```
 
 ---
@@ -148,7 +148,7 @@ tag-manager lifecycle set-ttl --noncompliant --ttl-days 14
 
 **Example**:
 ```bash
-tag-manager lifecycle wizard
+bluearch-aws-tags lifecycle wizard
 ```
 
 ---
@@ -161,22 +161,22 @@ tag-manager lifecycle wizard
 **Examples**:
 ```bash
 # Show everything
-tag-manager lifecycle scan
+bluearch-aws-tags lifecycle scan
 
 # Show only resources without tags
-tag-manager lifecycle scan --untagged
+bluearch-aws-tags lifecycle scan --untagged
 
 # Show resources expiring in 7 days
-tag-manager lifecycle scan --expiring 7
+bluearch-aws-tags lifecycle scan --expiring 7
 
 # Show only EC2 and Lambda
-tag-manager lifecycle scan --services ec2,lambda
+bluearch-aws-tags lifecycle scan --services ec2,lambda
 
 # Check AWS Org Tag Policy compliance
-tag-manager lifecycle scan --check-compliance
+bluearch-aws-tags lifecycle scan --check-compliance
 
 # Show only noncompliant resources (missing required tags)
-tag-manager lifecycle scan --noncompliant
+bluearch-aws-tags lifecycle scan --noncompliant
 ```
 
 ---
@@ -189,16 +189,16 @@ tag-manager lifecycle scan --noncompliant
 **Examples**:
 ```bash
 # Set all EC2 instances to expire in 30 days
-tag-manager lifecycle set-ttl --services ec2 --ttl-days 30
+bluearch-aws-tags lifecycle set-ttl --services ec2 --ttl-days 30
 
 # Set a specific resource to expire in 60 days
-tag-manager lifecycle set-ttl --resource-arn arn:aws:ec2:... --ttl-days 60
+bluearch-aws-tags lifecycle set-ttl --resource-arn arn:aws:ec2:... --ttl-days 60
 
 # Preview changes without applying them
-tag-manager lifecycle set-ttl --services ec2 --ttl-days 30 --dry-run
+bluearch-aws-tags lifecycle set-ttl --services ec2 --ttl-days 30 --dry-run
 
 # Apply TTL to noncompliant resources only (from AWS Org policy check)
-tag-manager lifecycle set-ttl --noncompliant --ttl-days 14
+bluearch-aws-tags lifecycle set-ttl --noncompliant --ttl-days 14
 ```
 
 ---
@@ -217,7 +217,7 @@ tag-manager lifecycle set-ttl --noncompliant --ttl-days 14
 
 **Example**:
 ```bash
-tag-manager lifecycle review
+bluearch-aws-tags lifecycle review
 ```
 
 Screen looks like:
@@ -243,10 +243,10 @@ TTL Resource Review
 **Examples**:
 ```bash
 # Extend a specific resource by 30 days
-tag-manager lifecycle extend --resource-arn arn:aws:ec2:... --days 30
+bluearch-aws-tags lifecycle extend --resource-arn arn:aws:ec2:... --days 30
 
 # Extend all EC2 instances by 14 days
-tag-manager lifecycle extend --services ec2 --days 14
+bluearch-aws-tags lifecycle extend --services ec2 --days 14
 ```
 
 ---
@@ -259,13 +259,13 @@ tag-manager lifecycle extend --services ec2 --days 14
 **Examples**:
 ```bash
 # Protect a resource
-tag-manager lifecycle protect --resource-arn arn:aws:ec2:... --reason "Production server"
+bluearch-aws-tags lifecycle protect --resource-arn arn:aws:ec2:... --reason "Production server"
 
 # Remove protection
-tag-manager lifecycle protect --resource-arn arn:aws:ec2:... --unprotect
+bluearch-aws-tags lifecycle protect --resource-arn arn:aws:ec2:... --unprotect
 
 # List all protected resources
-tag-manager lifecycle protect --list
+bluearch-aws-tags lifecycle protect --list
 ```
 
 ---
@@ -278,10 +278,10 @@ tag-manager lifecycle protect --list
 **Examples**:
 ```bash
 # Preview what would be deleted
-tag-manager lifecycle delete --dry-run
+bluearch-aws-tags lifecycle delete --dry-run
 
 # Delete expired resources (with confirmation)
-tag-manager lifecycle delete --confirm
+bluearch-aws-tags lifecycle delete --confirm
 ```
 
 ---
@@ -294,16 +294,16 @@ tag-manager lifecycle delete --confirm
 **Examples**:
 ```bash
 # Send notifications
-tag-manager lifecycle notify
+bluearch-aws-tags lifecycle notify
 
 # Preview what would be sent
-tag-manager lifecycle notify --dry-run
+bluearch-aws-tags lifecycle notify --dry-run
 
 # Send a test message
-tag-manager lifecycle notify --test
+bluearch-aws-tags lifecycle notify --test
 
 # Send daily summary
-tag-manager lifecycle notify --summary
+bluearch-aws-tags lifecycle notify --summary
 ```
 
 ---
@@ -316,16 +316,16 @@ tag-manager lifecycle notify --summary
 **Examples**:
 ```bash
 # Interactive setup
-tag-manager lifecycle notify-setup
+bluearch-aws-tags lifecycle notify-setup
 
 # Set webhook URL directly
-tag-manager lifecycle notify-setup --webhook-url "https://hooks.slack.com/..."
+bluearch-aws-tags lifecycle notify-setup --webhook-url "https://hooks.slack.com/..."
 
 # Show current config
-tag-manager lifecycle notify-setup --show
+bluearch-aws-tags lifecycle notify-setup --show
 
 # Disable notifications
-tag-manager lifecycle notify-setup --disable
+bluearch-aws-tags lifecycle notify-setup --disable
 ```
 
 ---
@@ -338,13 +338,13 @@ tag-manager lifecycle notify-setup --disable
 **Examples**:
 ```bash
 # Ask a question
-tag-manager ask "what resources are expiring soon?"
+bluearch-aws-tags ask "what resources are expiring soon?"
 
 # Get help with a task
-tag-manager ask "how do I protect a resource?"
+bluearch-aws-tags ask "how do I protect a resource?"
 
 # Start interactive chat
-tag-manager ask chat
+bluearch-aws-tags ask chat
 ```
 
 ---
@@ -353,7 +353,7 @@ tag-manager ask chat
 
 ### Before (Complex)
 ```
-tag-manager
+bluearch-aws-tags
     |-- discover (...)
     |-- tags (...)
     |-- lifecycle (...)
@@ -370,7 +370,7 @@ tag-manager
 
 ### After (Simple)
 ```
-tag-manager
+bluearch-aws-tags
     |-- lifecycle   <-- Main feature
     |-- policy      <-- AWS Org policies (enterprise)
     |-- ask         <-- AI helper
@@ -388,34 +388,34 @@ tag-manager
 
 ```bash
 # 1. Scan for resources expiring this week
-tag-manager lifecycle scan --expiring 7
+bluearch-aws-tags lifecycle scan --expiring 7
 
 # 2. Review and take action
-tag-manager lifecycle review
+bluearch-aws-tags lifecycle review
 ```
 
 ### Weekly Routine (10 minutes)
 
 ```bash
 # 1. Send notifications to team
-tag-manager lifecycle notify
+bluearch-aws-tags lifecycle notify
 
 # 2. Review all expiring resources
-tag-manager lifecycle review
+bluearch-aws-tags lifecycle review
 
 # 3. Clean up expired resources
-tag-manager lifecycle delete --dry-run
-tag-manager lifecycle delete --confirm
+bluearch-aws-tags lifecycle delete --dry-run
+bluearch-aws-tags lifecycle delete --confirm
 ```
 
 ### Automation (Cron)
 
 ```bash
 # Daily at 9am: Send Slack notifications
-0 9 * * * tag-manager lifecycle notify
+0 9 * * * bluearch-aws-tags lifecycle notify
 
 # Weekly on Monday: Send summary
-0 9 * * 1 tag-manager lifecycle notify --summary
+0 9 * * 1 bluearch-aws-tags lifecycle notify --summary
 ```
 
 ---
@@ -435,4 +435,4 @@ A: It won't appear in expiring lists or be eligible for deletion. You can unprot
 A: No. Deletions are permanent. Always use `--dry-run` first!
 
 **Q: How do I scan multiple AWS accounts?**
-A: Run `tag-manager setup multi-accounts` first, then `lifecycle scan` will include all configured accounts.
+A: Run `bluearch-aws-tags setup multi-account --complete` first, then use `bluearch-aws-tags lifecycle scan --multi-account` to include configured accounts.

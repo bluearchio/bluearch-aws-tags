@@ -34,7 +34,7 @@
             <i class="pi pi-cog"></i> Set Up CUR
           </button>
           <span class="cur-cli-hint">
-            Or via CLI: <code>tag-manager cost setup detect</code>
+            Or via CLI: <code>bluearch-aws-tags cost setup detect</code>
           </span>
         </div>
         <div v-else class="cur-setup-panel">
@@ -103,12 +103,12 @@
               <div v-if="curMessage" class="cur-message" :class="curMessageType">{{ curMessage }}</div>
             </div>
             <div v-if="curTab === 'cli'" class="cur-tab-panel">
-              <p>Set up CUR using the tag-manager CLI:</p>
+              <p>Set up CUR using the BlueArch AWS Tags CLI:</p>
               <div class="cur-cli-steps">
-                <div class="cli-step"><span class="step-num">1</span><div><strong>Detect existing CUR</strong><code>tag-manager cost setup detect</code></div></div>
-                <div class="cli-step"><span class="step-num">2</span><div><strong>Create new CUR (if none found)</strong><code>tag-manager cost setup create</code></div></div>
-                <div class="cli-step"><span class="step-num">3</span><div><strong>Or configure manually</strong><code>tag-manager cost setup configure --database &lt;db&gt; --table &lt;tbl&gt;</code></div></div>
-                <div class="cli-step"><span class="step-num">4</span><div><strong>Validate access</strong><code>tag-manager cost setup validate</code></div></div>
+                <div class="cli-step"><span class="step-num">1</span><div><strong>Detect existing CUR</strong><code>bluearch-aws-tags cost setup detect</code></div></div>
+                <div class="cli-step"><span class="step-num">2</span><div><strong>Create new CUR (if none found)</strong><code>bluearch-aws-tags cost setup create</code></div></div>
+                <div class="cli-step"><span class="step-num">3</span><div><strong>Or configure manually</strong><code>bluearch-aws-tags cost setup configure --database &lt;db&gt; --table &lt;tbl&gt;</code></div></div>
+                <div class="cli-step"><span class="step-num">4</span><div><strong>Validate access</strong><code>bluearch-aws-tags cost setup validate</code></div></div>
               </div>
             </div>
           </div>
@@ -285,7 +285,7 @@
                   <span class="daily-stat-value">{{ fmt.formatCurrency(dailyAvg * 30) }}</span>
                 </div>
               </div>
-              <p class="daily-hint">For detailed daily cost breakdown with trends, use: <code>tag-manager cost daily</code></p>
+              <p class="daily-hint">For detailed daily cost breakdown with trends, use: <code>bluearch-aws-tags cost daily</code></p>
             </div>
             <!-- Total overview -->
             <div v-if="drillDown.type === 'total'" class="drilldown-daily">

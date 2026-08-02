@@ -19,13 +19,13 @@ npm ci
 Start core first:
 
 ```bash
-bluearch-core start --daemon
+bluearch-aws-core start --daemon
 ```
 
 Run the backend/dashboard:
 
 ```bash
-tag-manager web start --host 127.0.0.1 --port 8096
+make backend-dev
 ```
 
 Run the frontend:

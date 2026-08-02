@@ -1,4 +1,4 @@
-"""FinOps cost management commands for tag-manager CLI.
+"""FinOps cost management commands for bluearch-aws-tags CLI.
 
 Provides CUR-based cost analysis, chargeback reporting, visibility gap
 analysis, anomaly detection, and trend analysis.
@@ -19,6 +19,7 @@ cost_app = typer.Typer(
     no_args_is_help=False
 )
 console = Console()
+PUBLIC_CUR_DETECT_COMMAND = "bluearch-aws-tags cost setup detect"
 
 
 def show_cost_help():
@@ -61,11 +62,11 @@ def show_cost_help():
 
     console.print("[bold red]SETUP & CONFIGURATION[/bold red]:")
     console.print("- [cyan]setup detect[/cyan]    - Auto-detect existing CUR and display status")
-    console.print("- [cyan]setup create[/cyan]    - Deploy CUR infrastructure through bluearch-core")
+    console.print("- [cyan]setup create[/cyan]    - Deploy CUR infrastructure through bluearch-aws-core")
     console.print("- [cyan]setup validate[/cyan]  - Test CUR access and query capability\n")
 
     console.print("[bold white]QUICK START WORKFLOW[/bold white]:")
-    console.print("1. [dim]cost setup detect[/dim]           # Check for existing CUR")
+    console.print(f"1. [dim]{PUBLIC_CUR_DETECT_COMMAND}[/dim]           # Check for existing CUR")
     console.print("2. [dim]cost summary[/dim]                # Overview of all costs")
     console.print("3. [dim]cost services[/dim]               # Breakdown by service")
     console.print("4. [dim]cost ec2[/dim]                    # Deep-dive into EC2")
@@ -131,11 +132,11 @@ def cost_setup(
         help="Force reconfiguration"
     )
 ):
-    """Configure CUR access or create new CUR through bluearch-core.
+    """Configure CUR access or create new CUR through bluearch-aws-core.
 
     Actions:
       detect    - Auto-detect existing CUR configuration and display status
-      create    - Deploy CUR infrastructure through bluearch-core
+      create    - Deploy CUR infrastructure through bluearch-aws-core
       configure - Manually configure CUR settings
       validate  - Test CUR access and query capability
     """
@@ -152,7 +153,10 @@ def cost_setup(
             if config.status == 'pending':
                 # CUR exists but data not ready yet - don't offer validation
                 console.print("\n[yellow]CUR is set up but data is not available yet.[/yellow]")
-                console.print("Check back in ~24 hours and run 'cost setup status'")
+                console.print(
+                    "Check back in ~24 hours and run "
+                    "'bluearch-aws-tags cost setup detect'"
+                )
             else:
                 setup.display_cur_status(config)
                 # Offer to validate only for active configs
@@ -194,12 +198,14 @@ def cost_setup(
     elif action == "validate":
         config = setup.detect_existing_cur()
         if not config:
-            print_error("No CUR configuration found. Run 'cost setup detect' first.")
+            print_error(f"No CUR configuration found. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
             raise typer.Exit(1)
 
         if config.status == 'pending':
             print_warning("CUR is set up but data is not available yet (~24 hours).")
-            print_safe("Run 'cost setup status' later to check when data is ready.")
+            print_safe(
+                "Run 'bluearch-aws-tags cost setup detect' later to check when data is ready."
+            )
             raise typer.Exit(0)
 
         result = setup.validate_cur_access(config)
@@ -218,16 +224,18 @@ def _deploy_cur(setup, bucket: Optional[str] = None):
     """Deploy CUR infrastructure."""
     from ..modules.finops.cur_setup import CURSetup
 
-    # Check for existing tag-manager managed CUR first
+    # Check for existing bluearch-aws-tags managed CUR first
     console.print("[blue]Checking for existing CUR configuration...[/blue]")
     existing_config = setup.detect_existing_cur()
 
     if existing_config and existing_config.report_name == 'tag-manager-cur':
-        console.print("\n[yellow]A tag-manager managed CUR already exists:[/yellow]")
+        console.print("\n[yellow]A bluearch-aws-tags managed CUR already exists:[/yellow]")
         setup.display_cur_status(existing_config)
         if existing_config.status == 'pending':
             console.print("\n[dim]CUR data is still being prepared (~24 hours after creation).[/dim]")
-            console.print("[dim]Run 'cost setup detect' later to check when data is ready.[/dim]")
+            console.print(
+                "[dim]Run 'bluearch-aws-tags cost setup detect' later to check when data is ready.[/dim]"
+            )
         else:
             console.print("\n[dim]CUR is already configured and active.[/dim]")
             console.print("[dim]Use 'cost setup validate' to test access.[/dim]")
@@ -258,8 +266,8 @@ def _deploy_cur(setup, bucket: Optional[str] = None):
         setup.clear_config_cache()
         console.print("\n[yellow]Next steps:[/yellow]")
         console.print("1. Wait ~24 hours for CUR data to appear")
-        console.print("2. Run 'tag-manager cost setup detect' to check status")
-        console.print("3. Run 'tag-manager cost setup validate' to confirm access")
+        console.print("2. Run 'bluearch-aws-tags cost setup detect' to check status")
+        console.print("3. Run 'bluearch-aws-tags cost setup validate' to confirm access")
     else:
         print_error(f"Deployment failed: {result.message}")
 
@@ -317,10 +325,10 @@ def cost_report(
     Run without options for interactive mode, or use flags for automation.
 
     Examples:
-      tag-manager cost report                  # Interactive mode
-      tag-manager cost report -k Team          # Quick report by Team tag
-      tag-manager cost report -k Environment -v production --group-by Team
-      tag-manager cost report -k Team -f csv -o team_costs.csv
+      bluearch-aws-tags cost report                  # Interactive mode
+      bluearch-aws-tags cost report -k Team          # Quick report by Team tag
+      bluearch-aws-tags cost report -k Environment -v production --group-by Team
+      bluearch-aws-tags cost report -k Team -f csv -o team_costs.csv
     """
     from ..modules.finops.chargeback import ChargebackReporter
 
@@ -461,9 +469,9 @@ def cost_gaps(
     Run without options for interactive mode that discovers available tags.
 
     Examples:
-      tag-manager cost gaps                    # Interactive - discover tags
-      tag-manager cost gaps -r Team,Project    # Check specific tags
-      tag-manager cost gaps --show-resources
+      bluearch-aws-tags cost gaps                    # Interactive - discover tags
+      bluearch-aws-tags cost gaps -r Team,Project    # Check specific tags
+      bluearch-aws-tags cost gaps --show-resources
     """
     from ..modules.finops.visibility_gaps import VisibilityGapAnalyzer
     from ..modules.finops.cur_client import CURClient
@@ -604,10 +612,10 @@ def cost_anomalies(
       acknowledge - Mark an anomaly as acknowledged
 
     Examples:
-      tag-manager cost anomalies                    # Interactive mode
-      tag-manager cost anomalies detect -k Team
-      tag-manager cost anomalies detect -k Environment -p 50 -a 500
-      tag-manager cost anomalies list
+      bluearch-aws-tags cost anomalies                    # Interactive mode
+      bluearch-aws-tags cost anomalies detect -k Team
+      bluearch-aws-tags cost anomalies detect -k Environment -p 50 -a 500
+      bluearch-aws-tags cost anomalies list
     """
     from ..modules.finops.anomaly_detector import AnomalyDetector, AnomalyThresholds
 
@@ -716,10 +724,10 @@ def cost_trends(
     Run without options for interactive mode.
 
     Examples:
-      tag-manager cost trends                  # Interactive mode
-      tag-manager cost trends -k Team
-      tag-manager cost trends -k Environment -v production -p 12
-      tag-manager cost trends -k Team --detailed engineering
+      bluearch-aws-tags cost trends                  # Interactive mode
+      bluearch-aws-tags cost trends -k Team
+      bluearch-aws-tags cost trends -k Environment -v production -p 12
+      bluearch-aws-tags cost trends -k Team --detailed engineering
     """
     from ..modules.finops.cost_trends import TrendAnalyzer
 
@@ -809,9 +817,9 @@ def cost_services(
     Displays unblended and blended costs per service with percentage of total.
 
     Examples:
-      tag-manager cost services
-      tag-manager cost services --start 2024-11-01
-      tag-manager cost services -k Team -v engineering
+      bluearch-aws-tags cost services
+      bluearch-aws-tags cost services --start 2024-11-01
+      bluearch-aws-tags cost services -k Team -v engineering
     """
     from rich.table import Table
 
@@ -900,9 +908,9 @@ def cost_accounts(
     properly distribute Savings Plans and Reserved Instance costs.
 
     Examples:
-      tag-manager cost accounts
-      tag-manager cost accounts --include-services
-      tag-manager cost accounts --start 2024-11-01 --end 2024-12-01
+      bluearch-aws-tags cost accounts
+      bluearch-aws-tags cost accounts --include-services
+      bluearch-aws-tags cost accounts --start 2024-11-01 --end 2024-12-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -921,7 +929,7 @@ def cost_accounts(
     # Check if CUR is available (required for account breakdown)
     if not isinstance(data_source, CURClient):
         print_warning("Account breakdown requires CUR. Cost Explorer fallback not supported.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1011,9 +1019,9 @@ def cost_resources(
     over-provisioned or unused resources.
 
     Examples:
-      tag-manager cost resources
-      tag-manager cost resources --limit 20
-      tag-manager cost resources --start 2024-11-01
+      bluearch-aws-tags cost resources
+      bluearch-aws-tags cost resources --limit 20
+      bluearch-aws-tags cost resources --start 2024-11-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1031,7 +1039,7 @@ def cost_resources(
 
     if not isinstance(data_source, CURClient):
         print_warning("Resource-level breakdown requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1099,9 +1107,9 @@ def cost_daily(
     cost spikes and daily patterns.
 
     Examples:
-      tag-manager cost daily
-      tag-manager cost daily --start 2024-11-01
-      tag-manager cost daily -f csv > daily_costs.csv
+      bluearch-aws-tags cost daily
+      bluearch-aws-tags cost daily --start 2024-11-01
+      bluearch-aws-tags cost daily -f csv > daily_costs.csv
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1119,7 +1127,7 @@ def cost_daily(
 
     if not isinstance(data_source, CURClient):
         print_warning("Daily summary requires CUR for amortized costs.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1201,8 +1209,8 @@ def cost_summary(
     Taxes, Credits, Support fees, etc.
 
     Examples:
-      tag-manager cost summary
-      tag-manager cost summary --start 2024-11-01
+      bluearch-aws-tags cost summary
+      bluearch-aws-tags cost summary --start 2024-11-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1232,7 +1240,7 @@ def cost_summary(
 
     if not isinstance(data_source, CURClient):
         print_warning("Cost summary requires CUR for detailed charge types.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1307,8 +1315,8 @@ def cost_pricing(
     Helps identify optimization opportunities.
 
     Examples:
-      tag-manager cost pricing
-      tag-manager cost pricing --start 2024-11-01
+      bluearch-aws-tags cost pricing
+      bluearch-aws-tags cost pricing --start 2024-11-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1326,7 +1334,7 @@ def cost_pricing(
 
     if not isinstance(data_source, CURClient):
         print_warning("Pricing model analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1419,8 +1427,8 @@ def cost_savings_plans(
     Low utilization means you're paying for unused commitment.
 
     Examples:
-      tag-manager cost savings-plans
-      tag-manager cost savings-plans --start 2024-11-01
+      bluearch-aws-tags cost savings-plans
+      bluearch-aws-tags cost savings-plans --start 2024-11-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1438,7 +1446,7 @@ def cost_savings_plans(
 
     if not isinstance(data_source, CURClient):
         print_warning("Savings Plans analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1539,8 +1547,8 @@ def cost_reservations(
     Low utilization means you're paying for unused reservations.
 
     Examples:
-      tag-manager cost reservations
-      tag-manager cost reservations --start 2024-11-01
+      bluearch-aws-tags cost reservations
+      bluearch-aws-tags cost reservations --start 2024-11-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1558,7 +1566,7 @@ def cost_reservations(
 
     if not isinstance(data_source, CURClient):
         print_warning("Reserved Instance analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1638,8 +1646,8 @@ def cost_data_transfer(
     transfer costs by direction (IN/OUT), location, and service.
 
     Examples:
-      tag-manager cost data-transfer
-      tag-manager cost data-transfer --start 2024-11-01
+      bluearch-aws-tags cost data-transfer
+      bluearch-aws-tags cost data-transfer --start 2024-11-01
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1657,7 +1665,7 @@ def cost_data_transfer(
 
     if not isinstance(data_source, CURClient):
         print_warning("Data transfer analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1763,10 +1771,10 @@ def cost_ec2(
       pricing   - On-Demand vs Spot vs Savings Plans vs Reserved
 
     Examples:
-      tag-manager cost ec2
-      tag-manager cost ec2 instances --limit 20
-      tag-manager cost ec2 pricing
-      tag-manager cost ec2 families -f csv
+      bluearch-aws-tags cost ec2
+      bluearch-aws-tags cost ec2 instances --limit 20
+      bluearch-aws-tags cost ec2 pricing
+      bluearch-aws-tags cost ec2 families -f csv
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1779,7 +1787,7 @@ def cost_ec2(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("EC2 analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"EC2 analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "instances":
@@ -1868,9 +1876,9 @@ def cost_s3(
       operations - Cost by operation type (GET, PUT, LIST, etc.)
 
     Examples:
-      tag-manager cost s3
-      tag-manager cost s3 buckets --limit 20
-      tag-manager cost s3 storage
+      bluearch-aws-tags cost s3
+      bluearch-aws-tags cost s3 buckets --limit 20
+      bluearch-aws-tags cost s3 storage
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1883,7 +1891,7 @@ def cost_s3(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("S3 analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"S3 analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "buckets":
@@ -1967,9 +1975,9 @@ def cost_rds(
       breakdown - Cost by charge category (Instance, Storage, I/O, etc.)
 
     Examples:
-      tag-manager cost rds
-      tag-manager cost rds engines
-      tag-manager cost rds instances --limit 20
+      bluearch-aws-tags cost rds
+      bluearch-aws-tags cost rds engines
+      bluearch-aws-tags cost rds instances --limit 20
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -1982,7 +1990,7 @@ def cost_rds(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("RDS analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"RDS analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "engines":
@@ -2069,9 +2077,9 @@ def cost_lambda(
       functions - Cost by function name (requires resource-level CUR)
 
     Examples:
-      tag-manager cost lambda
-      tag-manager cost lambda breakdown
-      tag-manager cost lambda functions --limit 20
+      bluearch-aws-tags cost lambda
+      bluearch-aws-tags cost lambda breakdown
+      bluearch-aws-tags cost lambda functions --limit 20
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -2084,7 +2092,7 @@ def cost_lambda(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Lambda analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Lambda analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "breakdown":
@@ -2149,8 +2157,8 @@ def cost_regions(
     to see which services are driving costs in each region.
 
     Examples:
-      tag-manager cost regions
-      tag-manager cost regions --include-services
+      bluearch-aws-tags cost regions
+      bluearch-aws-tags cost regions --include-services
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -2163,7 +2171,7 @@ def cost_regions(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Regional analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Regional analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     result = data_source.get_costs_by_region(start, end, include_services)
@@ -2218,9 +2226,9 @@ def cost_usage_types(
     EBS:VolumeUsage, etc. Useful for identifying unexpected charges.
 
     Examples:
-      tag-manager cost usage-types
-      tag-manager cost usage-types --service "Amazon EC2"
-      tag-manager cost usage-types --limit 100
+      bluearch-aws-tags cost usage-types
+      bluearch-aws-tags cost usage-types --service "Amazon EC2"
+      bluearch-aws-tags cost usage-types --limit 100
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -2236,7 +2244,7 @@ def cost_usage_types(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Usage type analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Usage type analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     result = data_source.get_costs_by_usage_type(start, end, service, limit)
@@ -2285,9 +2293,9 @@ def cost_compare(
     Use 'last-year' as period2 to compare with the same month last year.
 
     Examples:
-      tag-manager cost compare this-month last-month
-      tag-manager cost compare 2024-11 2024-10
-      tag-manager cost compare this-month last-year --group-by account
+      bluearch-aws-tags cost compare this-month last-month
+      bluearch-aws-tags cost compare 2024-11 2024-10
+      bluearch-aws-tags cost compare this-month last-year --group-by account
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -2325,7 +2333,7 @@ def cost_compare(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Cost comparison requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Cost comparison requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     # Parse periods
@@ -2515,9 +2523,9 @@ def cost_forecast(
       weighted - Weighted average favoring recent months
 
     Examples:
-      tag-manager cost forecast
-      tag-manager cost forecast --months 6
-      tag-manager cost forecast --method average
+      bluearch-aws-tags cost forecast
+      bluearch-aws-tags cost forecast --months 6
+      bluearch-aws-tags cost forecast --method average
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -2526,7 +2534,7 @@ def cost_forecast(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Cost forecasting requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Cost forecasting requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     # Get historical data
@@ -2657,9 +2665,9 @@ def cost_query(
       spot-savings     - Potential savings from Spot instances
 
     Examples:
-      tag-manager cost query "SELECT product_product_name, SUM(line_item_unblended_cost) FROM {table} GROUP BY 1"
-      tag-manager cost query --template top-services
-      tag-manager cost query --list-templates
+      bluearch-aws-tags cost query "SELECT product_product_name, SUM(line_item_unblended_cost) FROM {table} GROUP BY 1"
+      bluearch-aws-tags cost query --template top-services
+      bluearch-aws-tags cost query --list-templates
     """
     from rich.table import Table
     from ..modules.finops.cur_client import CURClient
@@ -2734,7 +2742,7 @@ def cost_query(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Custom queries require CUR. Run 'cost setup detect' first.")
+        print_warning(f"Custom queries require CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     console.print(f"[dim]Query: {sql.strip()[:100]}{'...' if len(sql) > 100 else ''}[/dim]\n")

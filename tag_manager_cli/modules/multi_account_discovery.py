@@ -308,7 +308,7 @@ class MultiAccountDiscovery:
 
         if not target_accounts:
             console.print("[yellow]No accounts enabled for scanning.[/yellow]")
-            console.print("Enable accounts with 'tag-manager accounts enable'")
+            console.print("Configure accounts with 'bluearch-aws-tags setup multi-account --complete'")
             return MultiAccountDiscoveryResult(
                 total_accounts=0,
                 successful_accounts=0,
