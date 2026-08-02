@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_WORKFLOW = ROOT / ".github" / "workflows" / "development-binaries.yml"
 QUALITY_WORKFLOW = ROOT / ".github" / "workflows" / "development-quality.yml"
+SCORECARD_WORKFLOW = ROOT / ".github" / "workflows" / "scorecard.yml"
 
 
 def _workflow() -> dict:
@@ -84,6 +85,20 @@ def test_frontend_lock_meets_dependency_audit_patch_minima() -> None:
     postcss = packages["node_modules/postcss"]["version"]
     assert tuple(map(int, brace_expansion.split("."))) >= (2, 1, 3)
     assert tuple(map(int, postcss.split("."))) >= (8, 5, 18)
+
+
+def test_scorecard_write_permissions_are_scoped_to_its_job() -> None:
+    workflow = yaml.load(
+        SCORECARD_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+    )
+
+    assert all(permission != "write" for permission in workflow["permissions"].values())
+    assert workflow["jobs"]["scorecard"]["permissions"] == {
+        "actions": "read",
+        "contents": "read",
+        "id-token": "write",
+        "security-events": "write",
+    }
 
 
 def test_release_gate_proves_an_immutable_tag_ref_at_checked_out_main() -> None:
