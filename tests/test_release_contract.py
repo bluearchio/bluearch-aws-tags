@@ -15,6 +15,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 DEVELOPMENT_WORKFLOW = ROOT / ".github" / "workflows" / "development-binaries.yml"
+PREFLIGHT_WORKFLOW = ROOT / ".github" / "workflows" / "release-preflight.yml"
 QUALITY_WORKFLOW = ROOT / ".github" / "workflows" / "development-quality.yml"
 SCORECARD_WORKFLOW = ROOT / ".github" / "workflows" / "scorecard.yml"
 
@@ -26,6 +27,12 @@ def _workflow() -> dict:
 def _quality_workflow() -> dict:
     return yaml.load(
         QUALITY_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+    )
+
+
+def _preflight_workflow() -> dict:
+    return yaml.load(
+        PREFLIGHT_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
     )
 
 
@@ -46,12 +53,32 @@ def test_release_graph_verifies_tag_and_main_before_builds() -> None:
     assert "if" not in jobs["verify"]
     assert jobs["linux"]["needs"] == "verify"
     assert jobs["macos"]["needs"] == "verify"
-    assert set(jobs["publish"]["needs"]) == {"verify", "linux", "macos"}
+    assert set(jobs["sbom"]["needs"]) == {"linux", "macos"}
+    assert set(jobs["publish"]["needs"]) == {"verify", "linux", "macos", "sbom"}
     assert jobs["homebrew"]["needs"] == "publish"
     verify_commands = _run_text(jobs["verify"])
     assert "origin/main" in verify_commands
     assert "tag_manager_cli/__init__.py" in verify_commands
     assert "pytest" in verify_commands
+
+
+def test_expensive_development_binaries_are_manual_and_cancel_superseded_runs() -> None:
+    workflow = yaml.load(
+        DEVELOPMENT_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader
+    )
+
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert workflow["concurrency"] == {
+        "group": "development-binaries-${{ github.ref }}",
+        "cancel-in-progress": "true",
+    }
+
+
+def test_release_concurrency_is_scoped_to_the_release_tag() -> None:
+    assert _workflow()["concurrency"] == {
+        "group": "release-${{ github.ref_name }}",
+        "cancel-in-progress": "false",
+    }
 
 
 def test_quality_lint_supports_artifact_metadata_permission() -> None:
@@ -165,11 +192,17 @@ def test_release_credentials_preflight_runs_before_tests_and_builds() -> None:
     assert commands.count("validate=True") == 2
     assert 'os.environ["MACOS_CERTIFICATE_P12_BASE64"]' in commands
     assert 'os.environ["APPLE_API_KEY_P8_BASE64"]' in commands
+    assert 'Path(os.environ["certificate_path"]).write_bytes(decoded)' in commands
+    assert 'openssl pkcs12 -in "$certificate_path"' in commands
+    assert 'openssl pkcs12 -legacy -in "$certificate_path"' in commands
+    assert "-passin env:MACOS_CERTIFICATE_PASSWORD" in commands
+    assert "certificate or its password is invalid" in commands
     assert "api_notarization_ready" in commands
     assert "apple_id_notarization_ready" in commands
     assert "set -x" not in commands
     assert "printenv" not in commands
     assert "--token" not in commands
+    assert "-passin pass:" not in commands
     assert "$HOMEBREW_TAP_TOKEN_2" not in commands
     assert "secrets." not in commands
 
@@ -192,43 +225,106 @@ def test_release_verifies_final_artifacts_without_inline_version_stamping() -> N
     assert "Stamp release version" not in workflow_text
 
 
-@pytest.mark.parametrize(
-    ("job_name", "label", "platform", "archive_name", "extract_command"),
-    [
-        (
-            "linux",
-            "Linux",
-            "linux-x86_64",
-            "$BINARY_NAME-linux-x86_64.tar.gz",
-            'tar --no-same-owner --no-same-permissions -xzf "artifacts/$BINARY_NAME-linux-x86_64.tar.gz"',
-        ),
-        (
-            "macos",
-            "macOS",
-            "macos-arm64",
-            "$BINARY_NAME-macos-arm64.zip",
-            'ditto -x -k "artifacts/$BINARY_NAME-macos-arm64.zip"',
-        ),
-    ],
-)
-def test_release_sbom_scans_extracted_final_artifact_directory(
-    job_name: str,
-    label: str,
-    platform: str,
-    archive_name: str,
-    extract_command: str,
-) -> None:
-    job = _workflow()["jobs"][job_name]
-    extract_index, extract = _named_step(job, f"Extract final {label} artifact for SBOM")
-    sbom_index, sbom = _named_step(job, f"Generate final {label} artifact SBOM")
-    sbom_path = sbom["with"]["path"]
+def test_release_sboms_run_once_on_ubuntu_from_final_archives() -> None:
+    jobs = _workflow()["jobs"]
+    job = jobs["sbom"]
+    workflow_text = WORKFLOW.read_text(encoding="utf-8")
 
-    assert extract_index < sbom_index
-    assert archive_name in extract["run"]
-    assert extract_command in extract["run"]
-    assert f'$RUNNER_TEMP/sbom-{platform}' in extract["run"]
-    assert sbom_path == f"${{{{ runner.temp }}}}/sbom-{platform}"
-    assert not sbom_path.endswith((".tar.gz", ".zip"))
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == "15"
+    assert "anchore/sbom-action" not in str(jobs["linux"])
+    assert "anchore/sbom-action" not in str(jobs["macos"])
+    download = next(
+        step for step in job["steps"]
+        if step.get("uses") == "actions/download-artifact@v4"
+    )
+    assert download["with"] == {
+        "pattern": "release-*",
+        "path": "release-assets",
+        "merge-multiple": "true",
+    }
+
+    extract_index, extract = _named_step(
+        job, "Extract final release artifacts for SBOM"
+    )
+    extract_commands = extract["run"]
+    assert 'release-assets/$BINARY_NAME-linux-x86_64.tar.gz' in extract_commands
+    assert 'release-assets/$BINARY_NAME-macos-arm64.zip' in extract_commands
+    assert "tar --no-same-owner --no-same-permissions" in extract_commands
+    assert "unzip -q" in extract_commands
+    assert '$RUNNER_TEMP/sbom-linux-x86_64' in extract_commands
+    assert '$RUNNER_TEMP/sbom-macos-arm64' in extract_commands
+    assert 'test -x "$linux_dir/$BINARY_NAME"' in extract_commands
+    assert 'test -f "$macos_dir/$BINARY_NAME"' in extract_commands
+
+    for label, platform in (("Linux", "linux-x86_64"), ("macOS", "macos-arm64")):
+        sbom_index, sbom = _named_step(
+            job, f"Generate final {label} artifact SBOM"
+        )
+        assert extract_index < sbom_index
+        assert sbom["uses"] == "anchore/sbom-action@v0.24.0"
+        assert sbom["with"]["path"] == f"${{{{ runner.temp }}}}/sbom-{platform}"
+        assert sbom["with"]["format"] == "cyclonedx-json"
+        assert sbom["with"]["output-file"] == (
+            f"sboms/${{{{ env.BINARY_NAME }}}}-{platform}.cyclonedx.json"
+        )
+        assert sbom["with"]["upload-artifact"] == "false"
+        assert sbom["with"]["upload-release-assets"] == "false"
+
+    upload = next(
+        step for step in job["steps"]
+        if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    assert upload["with"] == {
+        "name": "release-sboms",
+        "path": "sboms/*",
+        "if-no-files-found": "error",
+    }
+    assert workflow_text.count("anchore/sbom-action@v0.24.0") == 2
+
+
+def test_manual_release_preflight_is_cheap_complete_and_secret_safe() -> None:
+    workflow = _preflight_workflow()
+    job = workflow["jobs"]["validate"]
+    _, step = _named_step(
+        job, "Validate signing, notarization, and Homebrew credentials"
+    )
+    commands = step["run"]
+
+    assert set(workflow["on"]) == {"workflow_dispatch"}
+    assert workflow["permissions"] == {"contents": "read"}
+    assert workflow["concurrency"]["cancel-in-progress"] == "true"
+    assert job["runs-on"] == "ubuntu-24.04"
+    assert job["timeout-minutes"] == "5"
+    assert len(job["steps"]) == 1
+    assert step["env"] == {
+        "MACOS_CERTIFICATE_P12_BASE64": "${{ secrets.MACOS_CERTIFICATE_P12_BASE64 || secrets.APPLE_CERTIFICATE_BASE64 || secrets.MACOS_CERTIFICATE }}",
+        "MACOS_CERTIFICATE_PASSWORD": "${{ secrets.MACOS_CERTIFICATE_PASSWORD || secrets.APPLE_CERTIFICATE_PASSWORD || secrets.MACOS_CERTIFICATE_PWD }}",
+        "APPLE_ID": "${{ secrets.APPLE_ID }}",
+        "APPLE_ID_PASSWORD": "${{ secrets.APPLE_ID_PASSWORD || secrets.APPLE_APP_SPECIFIC_PASSWORD }}",
+        "APPLE_TEAM_ID": "${{ secrets.APPLE_TEAM_ID }}",
+        "GH_TOKEN": "${{ secrets.HOMEBREW_TAP_TOKEN_2 }}",
+    }
+    assert "APPLE_ID APPLE_ID_PASSWORD APPLE_TEAM_ID" in commands
+    assert '[[ -z "${GH_TOKEN:-}" ]]' in commands
+    assert "Missing HOMEBREW_TAP_TOKEN_2" in commands
+    assert commands.count("base64.b64decode") == 1
+    assert "validate=True" in commands
+    assert 'openssl pkcs12 -in "$certificate_path"' in commands
+    assert 'openssl pkcs12 -legacy -in "$certificate_path"' in commands
+    assert "-passin env:MACOS_CERTIFICATE_PASSWORD" in commands
+    assert '"repos/${HOMEBREW_TAP_REPO}"' in commands
+    assert ".permissions.push" in commands
+    assert ".allow_auto_merge" in commands
+    assert 'gh pr list --repo "$HOMEBREW_TAP_REPO"' in commands
+    assert "set -x" not in commands
+    assert "printenv" not in commands
+    assert "--token" not in commands
+    assert "-passin pass:" not in commands
+    assert "$HOMEBREW_TAP_TOKEN_2" not in commands
+    assert "secrets." not in commands
+    assert "nuitka" not in commands.lower()
+    assert "notarytool" not in commands
 
 
 def test_cross_repo_token_is_validated_before_github_release_publication() -> None:
