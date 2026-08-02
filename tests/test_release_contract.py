@@ -159,6 +159,7 @@ def test_formula_inputs_are_the_exact_verified_macos_asset_and_sha() -> None:
     assert '--version "$RELEASE_TAG"' in update["run"]
     assert '--asset "$FORMULA_ASSET"' in update["run"]
     assert '--sha256 "$FORMULA_SHA256"' in update["run"]
+    assert '--legacy-exceptions "config/legacy-dist-exceptions.json"' in update["run"]
     assert "https://github.com" not in update["run"]
 
 
@@ -182,6 +183,7 @@ def test_tap_pr_is_scoped_to_main_and_release_branch_from_origin_main() -> None:
     assert 'remote_url="$(git remote get-url origin)"' in pull_request["run"]
     assert 'git push --force-with-lease' in pull_request["run"]
     assert 'gh pr list --repo "$HOMEBREW_TAP_REPO" --base main --head "$branch"' in pull_request["run"]
+    assert 'git add "Formula/${HOMEBREW_FORMULA}.rb" "config/legacy-dist-exceptions.json"' in pull_request["run"]
     assert "gh pr create \\" in pull_request["run"]
     assert '--repo "$HOMEBREW_TAP_REPO" \\' in pull_request["run"]
     assert "--base main \\" in pull_request["run"]
