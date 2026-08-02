@@ -1,6 +1,7 @@
 """Update commands for Tag Manager CLI."""
 
 import os
+import shlex
 import typer
 import subprocess
 from rich.console import Console
@@ -12,6 +13,13 @@ try:
     # Try relative imports first (module execution)
     from ..utils.display_utils import print_safe, print_error
     from ..utils.version_checker import get_updates
+    from ..utils.public_executables import (
+        PUBLIC_CORE_FORMULA,
+        PUBLIC_TAGS_FORMULA,
+        probe_public_tags_version,
+        resolve_exact_executable,
+        resolve_homebrew_executable,
+    )
     from ..utils.core_client import (
         CoreRuntimeError,
         MINIMUM_CORE_VERSION,
@@ -24,6 +32,13 @@ except ImportError:
     # Fall back to absolute imports (direct execution)
     from tag_manager_cli.utils.display_utils import print_safe, print_error
     from tag_manager_cli.utils.version_checker import get_updates
+    from tag_manager_cli.utils.public_executables import (
+        PUBLIC_CORE_FORMULA,
+        PUBLIC_TAGS_FORMULA,
+        probe_public_tags_version,
+        resolve_exact_executable,
+        resolve_homebrew_executable,
+    )
     from tag_manager_cli.utils.core_client import (
         CoreRuntimeError,
         MINIMUM_CORE_VERSION,
@@ -41,7 +56,6 @@ app = typer.Typer(
 )
 
 # Public package names used when presenting upgrade guidance.
-PROD_INSTALL_URL = "brew upgrade bluearchio/tap/bluearch-aws-tags"
 DEV_INSTALL_URL = "pipx install -e ../bluearch-aws-tags --force"
 CORE_REQUIREMENT_KEYS = (
     "minimum_core_version",
@@ -49,55 +63,44 @@ CORE_REQUIREMENT_KEYS = (
     "bluearch_core_min_version",
     "required_core_version",
 )
+ALLOWED_HOMEBREW_FORMULAS = frozenset({PUBLIC_CORE_FORMULA, PUBLIC_TAGS_FORMULA})
+
+
+def _homebrew_tags_locations() -> dict[str, "Path"]:
+    from pathlib import Path
+
+    return {
+        "homebrew_arm": Path("/opt/homebrew/bin/bluearch-aws-tags"),
+        "homebrew_intel": Path("/usr/local/bin/bluearch-aws-tags"),
+    }
 
 
 def detect_homebrew_installation() -> dict:
     """Detect the public Tags executable installed via Homebrew."""
     from pathlib import Path
 
-    locations = {
-        "homebrew_arm": Path("/opt/homebrew/bin/bluearch-aws-tags"),
-        "homebrew_intel": Path("/usr/local/bin/bluearch-aws-tags"),
-    }
-
-    def is_public_binary(path: Path) -> bool:
-        if path.name != "bluearch-aws-tags" or not path.is_file() or not os.access(path, os.X_OK):
-            return False
-        try:
-            return path.resolve(strict=True).name == "bluearch-aws-tags"
-        except OSError:
-            return False
-
-    for install_type, path in locations.items():
-        if is_public_binary(path):
+    for install_type, path in _homebrew_tags_locations().items():
+        probe = probe_public_tags_version(os.fspath(path))
+        if probe is not None:
+            canonical_path, result = probe
             # For Intel, verify it's a Homebrew symlink (points to Cellar)
-            if install_type == "homebrew_intel":
-                try:
-                    if "Cellar" not in str(path.resolve()):
-                        continue
-                except Exception:
-                    continue
+            if install_type == "homebrew_intel" and "Cellar" not in canonical_path:
+                continue
 
             # Get version
             version = "unknown"
-            try:
-                result = subprocess.run(
-                    [str(path), "--version"], capture_output=True, text=True, timeout=10
-                )
-                if result.returncode == 0:
-                    for line in result.stdout.split("\n"):
-                        if "Tag Manager CLI" in line:
-                            version = line.strip()
-                            break
-            except Exception:
-                pass
+            if result.returncode == 0:
+                for line in result.stdout.split("\n"):
+                    if "Tag Manager CLI" in line:
+                        version = line.strip()
+                        break
 
             # Check for curl binary conflict
             curl_binary = Path.home() / ".local" / "bin" / "bluearch-aws-tags"
 
             return {
                 "installed": True,
-                "binary_path": str(path),
+                "binary_path": canonical_path,
                 "version": version,
                 "install_type": install_type,
                 "conflict": curl_binary.exists(),
@@ -107,40 +110,104 @@ def detect_homebrew_installation() -> dict:
     return {"installed": False}
 
 
-def perform_homebrew_core_update(required_core_version: str) -> bool:
-    """Install or upgrade bluearch-core via Homebrew before product update."""
+def _trust_homebrew_formulas(brew: str, formulas: tuple[str, ...]) -> bool:
+    """Trust only exact public formulae through a canonical Homebrew executable."""
+    canonical_brew = resolve_homebrew_executable(brew)
+    if canonical_brew is None:
+        print_error("A canonical Homebrew executable could not be resolved.")
+        return False
+    for formula in formulas:
+        if formula not in ALLOWED_HOMEBREW_FORMULAS:
+            print_error(f"Refusing to trust unsupported Homebrew formula: {formula}")
+            return False
+        try:
+            result = subprocess.run(
+                [canonical_brew, "trust", "--formula", formula],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            print_error(f"Homebrew formula trust failed for {formula}: {exc}")
+            return False
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "unknown error").strip()
+            print_error(f"Homebrew formula trust failed for {formula}: {detail}")
+            return False
+    return True
+
+
+def _prepare_homebrew(formulas: tuple[str, ...]) -> str | None:
+    brew = resolve_homebrew_executable()
+    if brew is None:
+        print_error("Homebrew executable was not found or did not resolve to canonical brew.")
+        return None
+    return brew if _trust_homebrew_formulas(brew, formulas) else None
+
+
+def _perform_homebrew_core_update(brew: str, required_core_version: str) -> bool:
     print_safe(f"[dim]Ensuring bluearch-aws-core >= {required_core_version}...[/dim]")
     installed = subprocess.run(
-        ["brew", "list", "--versions", "bluearch-aws-core"],
+        [brew, "list", "--versions", PUBLIC_CORE_FORMULA],
         capture_output=True,
         text=True,
         timeout=30,
     )
-    command = ["brew", "upgrade", "bluearchio/tap/bluearch-aws-core"] if installed.stdout.strip() else ["brew", "install", "bluearchio/tap/bluearch-aws-core"]
+    command = (
+        [brew, "upgrade", PUBLIC_CORE_FORMULA]
+        if installed.stdout.strip()
+        else [brew, "install", PUBLIC_CORE_FORMULA]
+    )
     result = subprocess.run(command, capture_output=False, text=True, timeout=300)
     if result.returncode != 0 and command[1] == "upgrade":
-        result = subprocess.run(["brew", "install", "bluearchio/tap/bluearch-aws-core"], capture_output=False, text=True, timeout=300)
+        result = subprocess.run(
+            [brew, "install", PUBLIC_CORE_FORMULA],
+            capture_output=False,
+            text=True,
+            timeout=300,
+        )
     return result.returncode == 0
+
+
+def perform_homebrew_core_update(required_core_version: str) -> bool:
+    """Trust, then install or upgrade Core through canonical Homebrew."""
+    brew = _prepare_homebrew((PUBLIC_CORE_FORMULA,))
+    if brew is None:
+        return False
+    try:
+        return _perform_homebrew_core_update(brew, required_core_version)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print_error(f"bluearch-aws-core Homebrew update failed: {exc}")
+        return False
 
 
 def perform_homebrew_update(required_core_version: str) -> bool:
     """Perform update via Homebrew. Returns True on success."""
     print_safe("\n[blue]Updating via Homebrew...[/blue]")
 
-    # Update tap
-    print_safe("[dim]Updating Homebrew tap...[/dim]")
-    subprocess.run(["brew", "update"], capture_output=True, text=True, timeout=120)
-
-    if not perform_homebrew_core_update(required_core_version):
-        print_error("bluearch-aws-core update failed. Tags update was not started.")
+    brew = _prepare_homebrew((PUBLIC_CORE_FORMULA, PUBLIC_TAGS_FORMULA))
+    if brew is None:
         return False
 
-    # Upgrade
-    print_safe("[dim]Upgrading bluearch-aws-tags...[/dim]")
-    result = subprocess.run(
-        ["brew", "upgrade", "bluearchio/tap/bluearch-aws-tags"], capture_output=False, text=True, timeout=300
-    )
-    return result.returncode == 0
+    try:
+        print_safe("[dim]Updating Homebrew tap...[/dim]")
+        subprocess.run([brew, "update"], capture_output=True, text=True, timeout=120)
+
+        if not _perform_homebrew_core_update(brew, required_core_version):
+            print_error("bluearch-aws-core update failed. Tags update was not started.")
+            return False
+
+        print_safe("[dim]Upgrading bluearch-aws-tags...[/dim]")
+        result = subprocess.run(
+            [brew, "upgrade", PUBLIC_TAGS_FORMULA],
+            capture_output=False,
+            text=True,
+            timeout=300,
+        )
+        return result.returncode == 0
+    except (OSError, subprocess.SubprocessError) as exc:
+        print_error(f"Homebrew update failed: {exc}")
+        return False
 
 
 def perform_core_install(required_core_version: str, development_channel: bool) -> bool:
@@ -151,9 +218,44 @@ def perform_core_install(required_core_version: str, development_channel: bool) 
     except CoreRuntimeError as exc:
         print_error(str(exc))
         return False
+    if not development_channel and not _trust_homebrew_formulas(
+        command[0],
+        (PUBLIC_CORE_FORMULA,),
+    ):
+        return False
     print_safe(f"[dim]Executing: {' '.join(command)}[/dim]")
     result = subprocess.run(command, capture_output=False, text=True)
     return result.returncode == 0
+
+
+def homebrew_update_remediation() -> str:
+    """Return trust-first, exact-formula manual update guidance."""
+    return "\n".join(
+        (
+            f"brew trust --formula {PUBLIC_CORE_FORMULA}",
+            f"brew trust --formula {PUBLIC_TAGS_FORMULA}",
+            f"brew upgrade {PUBLIC_CORE_FORMULA} {PUBLIC_TAGS_FORMULA}",
+        )
+    )
+
+
+def _prepare_product_update_command(development: bool) -> list[str] | None:
+    """Build one canonical, exact-form product update command."""
+    if development:
+        command = shlex.split(DEV_INSTALL_URL)
+        if command != ["pipx", "install", "-e", "../bluearch-aws-tags", "--force"]:
+            print_error("Unsupported development update command.")
+            return None
+        pipx = resolve_exact_executable(command[0], "pipx")
+        if pipx is None:
+            print_error("A canonical pipx executable could not be resolved.")
+            return None
+        return [pipx, *command[1:]]
+
+    brew = _prepare_homebrew((PUBLIC_TAGS_FORMULA,))
+    if brew is None:
+        return None
+    return [brew, "upgrade", PUBLIC_TAGS_FORMULA]
 
 
 def required_core_version(update_info: dict | None) -> str:
@@ -204,7 +306,7 @@ def update_main(
     Update Tag Manager CLI to the latest version.
 
     The update method is automatically detected based on your installation:
-      - Homebrew: Uses 'brew upgrade bluearchio/tap/bluearch-aws-tags'
+      - Homebrew: Trusts exact Core/Tags formulae, then upgrades them
       - Source install: reinstall from the local checkout
 
     Examples:
@@ -226,7 +328,6 @@ def update_main(
     try:
         # Determine channel and install URL
         channel = "development" if development else "production"
-        install_url = DEV_INSTALL_URL if development else PROD_INSTALL_URL
 
         # Show current version and channel
         print_safe(f"[blue]Current version:[/blue] {__version__}")
@@ -281,15 +382,18 @@ def update_main(
             if check:
                 print_safe("\n[blue]Checking for Homebrew updates...[/blue]")
                 try:
+                    brew = _prepare_homebrew((PUBLIC_TAGS_FORMULA,))
+                    if brew is None:
+                        raise typer.Exit(1)
                     result = subprocess.run(
-                        ["brew", "outdated", "bluearch-aws-tags"],
+                        [brew, "outdated", PUBLIC_TAGS_FORMULA],
                         capture_output=True,
                         text=True,
                         timeout=30,
                     )
                     if result.stdout.strip():
                         print_safe("[yellow]Update available via Homebrew[/yellow]")
-                        print_safe("\nTo update: [cyan]brew upgrade bluearchio/tap/bluearch-aws-core bluearchio/tap/bluearch-aws-tags[/cyan]")
+                        print_safe(f"\nTo update safely:\n[cyan]{homebrew_update_remediation()}[/cyan]")
                     else:
                         print_safe("[green]Already on latest Homebrew version![/green]")
                 except Exception as e:
@@ -304,13 +408,13 @@ def update_main(
             if not force and not yes:
                 prompt = (
                     "\nUpdate BlueArch Core and Tag Manager via Homebrew "
-                    "(brew upgrade/install bluearch-aws-core, then brew upgrade bluearch-aws-tags)?"
+                    "(trust the exact Core and Tags formulae, then upgrade them)?"
                 )
                 if not Confirm.ask(
                     prompt, default=True
                 ):
                     print_safe(
-                        "\n[dim]Update cancelled. To update manually: brew upgrade bluearchio/tap/bluearch-aws-core bluearchio/tap/bluearch-aws-tags[/dim]"
+                        f"\n[dim]Update cancelled. To update manually:\n{homebrew_update_remediation()}[/dim]"
                     )
                     return
 
@@ -322,7 +426,7 @@ def update_main(
                 )
             else:
                 print_error(
-                    "Homebrew update failed. Try manually: brew upgrade bluearchio/tap/bluearch-aws-core bluearchio/tap/bluearch-aws-tags"
+                    f"Homebrew update failed. Try manually:\n{homebrew_update_remediation()}"
                 )
                 raise typer.Exit(1)
             return
@@ -383,15 +487,18 @@ def update_main(
             f"\n[blue]Downloading and installing latest {channel} version...[/blue]"
         )
 
-        # Execute the installation script
-        cmd = install_url
+        command = _prepare_product_update_command(development)
+        if command is None:
+            print_error("Product update was not started.")
+            raise typer.Exit(1)
+        cmd = shlex.join(command)
 
         # Show the command being executed (for transparency)
         print_safe(f"[dim]Executing: {cmd}[/dim]")
 
         # Run the installation
         result = subprocess.run(
-            cmd.split(),
+            command,
             capture_output=False,  # Let output stream directly to user
             text=True,
         )
@@ -411,7 +518,10 @@ def update_main(
         else:
             print_error("Update failed. Please check the output above for details.")
             print_error("You can also try running the installation manually:")
-            print_error(f"  {cmd}")
+            if development:
+                print_error(f"  {cmd}")
+            else:
+                print_error(homebrew_update_remediation())
             raise typer.Exit(1)
 
     except KeyboardInterrupt:

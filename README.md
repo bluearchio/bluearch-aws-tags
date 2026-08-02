@@ -24,7 +24,8 @@ bluearch-aws-core start --daemon
 bluearch-aws-tags discover all
 ```
 
-Formula-specific trust is intentionally narrower than trusting the whole tap.
+Formula-specific trust is intentionally narrower than trusting the whole tap. The Tags formula depends on
+`bluearch-aws-core`, so Homebrew installs Core automatically even though only the Tags formula is installed explicitly.
 
 Linux:
 

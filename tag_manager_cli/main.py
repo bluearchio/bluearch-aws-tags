@@ -485,7 +485,6 @@ def main(
     4. [dim]lifecycle review[/dim]           - Manage expiring resources
     """
     if version_flag:
-        import subprocess
         from rich.prompt import Confirm
 
         try:
@@ -532,9 +531,13 @@ def main(
                         print_safe(f"[green]A stable production version is available: {prod_updates[0]['version']}[/green]")
                         if Confirm.ask("Would you like to upgrade to the production version?", default=False):
                             print_safe("\n[blue]Upgrading to production version...[/blue]")
-                            cmd = "brew upgrade bluearchio/tap/bluearch-aws-tags"
-                            print_safe(f"[dim]Executing: {cmd}[/dim]")
-                            subprocess.run(cmd.split())
+                            from tag_manager_cli.commands.update_commands import (
+                                perform_homebrew_update,
+                                required_core_version,
+                            )
+
+                            if not perform_homebrew_update(required_core_version(prod_updates[0])):
+                                print_error("Trust-first Homebrew update failed.")
                             return
                         print_safe("")  # Add spacing
 

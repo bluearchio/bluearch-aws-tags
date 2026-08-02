@@ -12,6 +12,11 @@ from typing import Any
 
 import requests
 
+from .public_executables import (
+    PUBLIC_CORE_FORMULA,
+    resolve_exact_executable,
+)
+
 
 DEFAULT_CORE_URL = "http://127.0.0.1:8094"
 DEFAULT_CORE_PORT = 8094
@@ -115,10 +120,10 @@ def check_core_dependency(app_name: str = "tag-manager", minimum_version: str | 
 
 
 def get_installed_core_version() -> str | None:
-    """Return the installed bluearch-core binary version, if the binary exists."""
+    """Return the installed public Core binary version, if it exists."""
     override = os.environ.get("BLUEARCH_CORE_BINARY")
     binary = (
-        _resolve_core_executable(override, allow_custom_development_binary=True)
+        _resolve_core_executable(override)
         if override
         else _resolve_core_executable(shutil.which(PUBLIC_CORE_EXECUTABLE))
     )
@@ -139,32 +144,18 @@ def get_installed_core_version() -> str | None:
 
 def _resolve_core_executable(
     candidate: str | None,
-    *,
-    allow_custom_development_binary: bool = False,
 ) -> str | None:
-    """Resolve a Core binary without permitting a legacy launcher to execute."""
+    """Resolve only a canonical public Core executable target."""
     if not candidate:
         return None
     raw_path = Path(candidate).expanduser()
     raw_name = raw_path.name
-    if raw_name in LEGACY_CORE_EXECUTABLES:
+    if raw_name.casefold() in LEGACY_CORE_EXECUTABLES:
         return None
-    if not allow_custom_development_binary and raw_name != PUBLIC_CORE_EXECUTABLE:
+    if raw_name != PUBLIC_CORE_EXECUTABLE:
         return None
 
-    path = raw_path if raw_path.is_absolute() else Path(shutil.which(candidate) or "")
-    if not path or not path.is_file() or not os.access(path, os.X_OK):
-        return None
-    try:
-        target = path.resolve(strict=True)
-    except OSError:
-        return None
-    target_name = target.name.casefold()
-    if target_name in LEGACY_CORE_EXECUTABLES:
-        return None
-    if not allow_custom_development_binary and target_name != PUBLIC_CORE_EXECUTABLE:
-        return None
-    return os.fspath(target)
+    return resolve_exact_executable(candidate, PUBLIC_CORE_EXECUTABLE)
 
 
 def core_version_satisfies(version: str | None, minimum_version: str | None = None) -> bool:
@@ -182,7 +173,7 @@ def core_install_url(development: bool = False) -> str:
 
 
 def resolve_core_install_command(development: bool = False) -> list[str]:
-    """Return a validated installer argv without permitting legacy Core execution."""
+    """Return a canonical executable for one explicitly supported install form."""
     configured = core_install_url(development)
     try:
         command = shlex.split(configured)
@@ -190,33 +181,24 @@ def resolve_core_install_command(development: bool = False) -> list[str]:
         raise CoreRuntimeError(f"Invalid BlueArch Core install command: {exc}") from exc
     if not command:
         raise CoreRuntimeError("BlueArch Core install command is empty.")
-    if any(_is_legacy_core_reference(part) for part in command):
-        raise CoreRuntimeError("Refusing to execute an installer command that references legacy bluearch-core.")
 
-    candidate = Path(command[0]).expanduser()
-    resolved = candidate if candidate.is_absolute() or candidate.parent != Path(".") else Path(shutil.which(command[0]) or "")
-    if not resolved or not resolved.is_file() or not os.access(resolved, os.X_OK):
-        raise CoreRuntimeError(f"BlueArch Core installer executable was not found: {command[0]}")
-    try:
-        target = resolved.resolve(strict=True)
-    except OSError as exc:
-        raise CoreRuntimeError(f"BlueArch Core installer could not be resolved: {command[0]}") from exc
-    if target.name.casefold() in LEGACY_CORE_EXECUTABLES:
-        raise CoreRuntimeError("Refusing to execute an installer that resolves to legacy bluearch-core.")
-
-    return [os.fspath(target), *command[1:]]
-
-
-def _is_legacy_core_reference(value: str) -> bool:
-    """Identify direct and wrapper-embedded references to legacy Core."""
-    candidate = value.split("=", 1)[-1] if value.startswith("-") and "=" in value else value
-    return bool(
-        re.search(
-            r"(?<![A-Za-z0-9_-])bluearch-core(?![A-Za-z0-9_-])",
-            candidate,
-            flags=re.IGNORECASE,
-        )
+    supported = (
+        ("pipx", "install", "-e", "../bluearch-aws-core")
+        if development
+        else ("brew", "install", "bluearchio/tap/bluearch-aws-core")
     )
+    signature = (Path(command[0]).name, *command[1:])
+    if signature != supported:
+        raise CoreRuntimeError(
+            "Unsupported BlueArch Core install command. Only the documented public "
+            f"{'development' if development else 'Homebrew'} install form is allowed."
+        )
+
+    target = resolve_exact_executable(command[0], supported[0])
+    if target is None:
+        raise CoreRuntimeError(f"BlueArch Core installer executable was not found: {command[0]}")
+
+    return [target, *command[1:]]
 
 
 def _extract_version(text: str) -> str | None:
@@ -233,8 +215,9 @@ def _format_core_update_message(app_name: str, status: dict[str, Any], minimum_v
     return (
         f"bluearch-aws-core {core_version} is too old for {app_label}. "
         f"Required version: >= {minimum_version}. "
-        "Install or update BlueArch Core with your installer, or with Homebrew: "
-        "`brew install bluearchio/tap/bluearch-aws-core`; then restart it with "
+        "For Homebrew, first trust only the Core formula with "
+        f"`brew trust --formula {PUBLIC_CORE_FORMULA}`. Only after that succeeds, "
+        f"run `brew install {PUBLIC_CORE_FORMULA}`; then restart it with "
         "`bluearch-aws-core start --daemon`."
     )
 

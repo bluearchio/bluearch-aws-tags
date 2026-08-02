@@ -6,6 +6,7 @@ Handles AWS profile selection and guides through setup.
 """
 
 import os
+import shutil
 import sys
 import subprocess
 import json
@@ -23,16 +24,19 @@ from ..utils.aws_auth import aws_auth
 from ..utils.command_suggestions import show_suggestions
 from ..utils.env_config import settings
 from ..utils.core_client import CoreRuntimeError, request_core
+from ..utils.public_executables import (
+    PUBLIC_TAGS_FORMULA,
+    PUBLIC_TAGS_EXECUTABLE,
+    probe_public_tags_version,
+    resolve_homebrew_executable,
+    resolve_public_tags_executable,
+)
 
 console = Console()
 setup_app = typer.Typer(
     help="Setup and configuration wizard",
     no_args_is_help=False
 )
-
-# Constants
-CLI_MODULE = "tag_manager_cli.main"
-
 
 def print_safe(message: str):
     """Print message safely without emojis for PyInstaller compatibility."""
@@ -978,10 +982,25 @@ def run_initial_discovery():
             print_safe(f"Found {policy_count} active lifecycle policies.")
             print_safe("Showing resources matching policies...\n")
             # Show resources matching policies (default scan behavior)
-            discovery_result = subprocess.run(
-                ["python", "-m", CLI_MODULE, "lifecycle", "scan"],
-                capture_output=False
+            executable = next(
+                (
+                    resolved
+                    for candidate in (
+                        sys.executable,
+                        shutil.which(PUBLIC_TAGS_EXECUTABLE),
+                    )
+                    if (resolved := resolve_public_tags_executable(candidate))
+                ),
+                None,
             )
+            if executable is None:
+                print_warning("A safe bluearch-aws-tags executable was not found.")
+                discovery_result = type('obj', (object,), {'returncode': 1})()
+            else:
+                discovery_result = subprocess.run(
+                    [executable, "lifecycle", "scan"],
+                    capture_output=False,
+                )
 
         if discovery_result.returncode == 0:
             print_success("\nResource discovery completed successfully")
@@ -1057,14 +1076,6 @@ def doctor():
 
     issues_found = 0
 
-    def is_public_binary(path: Path) -> bool:
-        if path.name != "bluearch-aws-tags" or not path.is_file() or not os.access(path, os.X_OK):
-            return False
-        try:
-            return path.resolve(strict=True).name == "bluearch-aws-tags"
-        except OSError:
-            return False
-
     # 1. Check for binary conflicts
     console.print("[bold]Checking binary installations...[/bold]\n")
 
@@ -1077,25 +1088,22 @@ def doctor():
 
     found_binaries = {}
     for name, path in binary_locations.items():
-        if is_public_binary(path):
+        probe = probe_public_tags_version(os.fspath(path))
+        if probe is not None:
+            canonical_path, result = probe
             # Get version
             version = "unknown"
-            try:
-                result = subprocess.run(
-                    [str(path), "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0:
-                    # Extract version from output like "AWS Tag Manager CLI v0.3.4 (production)"
-                    for line in result.stdout.split("\n"):
-                        if "Tag Manager CLI" in line:
-                            version = line.strip()
-                            break
-            except Exception:
-                pass
-            found_binaries[name] = {"path": path, "version": version}
+            if result.returncode == 0:
+                # Extract version from output like "AWS Tag Manager CLI v0.3.4 (production)"
+                for line in result.stdout.split("\n"):
+                    if "Tag Manager CLI" in line:
+                        version = line.strip()
+                        break
+            found_binaries[name] = {
+                "path": path,
+                "canonical_path": canonical_path,
+                "version": version,
+            }
 
     legacy_locations = (
         Path.home() / ".local" / "bin" / "tag-manager",
@@ -1104,7 +1112,11 @@ def doctor():
         Path("/usr/bin/tag-manager"),
     )
     legacy_binaries = [path for path in legacy_locations if path.exists()]
-    hidden_legacy_targets = [path for path in binary_locations.values() if path.exists() and not is_public_binary(path)]
+    hidden_legacy_targets = [
+        path
+        for path in binary_locations.values()
+        if path.exists() and resolve_public_tags_executable(os.fspath(path)) is None
+    ]
 
     # Display found binaries
     if not found_binaries:
@@ -1141,9 +1153,9 @@ def doctor():
             console.print(f"\n  [bold]Active binary:[/bold] {active_binary}")
 
             # Determine which one is active
-            active_path = Path(active_binary).resolve()
+            active_path = resolve_public_tags_executable(active_binary)
             for name, info in found_binaries.items():
-                if info["path"].resolve() == active_path:
+                if info["canonical_path"] == active_path:
                     if name == "curl" and ("homebrew_arm" in found_binaries or "homebrew_intel" in found_binaries):
                         console.print(f"\n  [yellow]Issue: Curl binary is shadowing Homebrew installation[/yellow]")
                         console.print(f"  [dim]The curl-installed binary comes before Homebrew in your PATH.[/dim]")
@@ -1154,21 +1166,14 @@ def doctor():
     # 2. Check active binary in PATH
     console.print("\n[bold]Checking PATH...[/bold]\n")
     active_binary = shutil.which("bluearch-aws-tags")
-    if active_binary and is_public_binary(Path(active_binary)):
+    active_probe = probe_public_tags_version(active_binary)
+    if active_probe is not None:
+        _, result = active_probe
         print_success(f"bluearch-aws-tags found in PATH: {active_binary}")
 
         # Get active version
-        try:
-            result = subprocess.run(
-                [active_binary, "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                console.print(f"  Active version: {result.stdout.split(chr(10))[0].strip()}")
-        except Exception:
-            pass
+        if result.returncode == 0:
+            console.print(f"  Active version: {result.stdout.split(chr(10))[0].strip()}")
     else:
         print_warning("bluearch-aws-tags not found in PATH")
         issues_found += 1
@@ -1233,8 +1238,11 @@ def doctor():
     # 5. Check Homebrew installation status
     console.print("\n[bold]Checking Homebrew installation...[/bold]\n")
     try:
+        brew = resolve_homebrew_executable()
+        if brew is None:
+            raise FileNotFoundError("canonical brew was not found")
         result = subprocess.run(
-            ["brew", "list", "bluearch-aws-tags"],
+            [brew, "list", PUBLIC_TAGS_FORMULA],
             capture_output=True,
             text=True,
             timeout=10
@@ -1243,7 +1251,7 @@ def doctor():
             print_success("Installed via Homebrew")
             # Get Homebrew version info
             version_result = subprocess.run(
-                ["brew", "info", "bluearch-aws-tags", "--json=v2"],
+                [brew, "info", PUBLIC_TAGS_FORMULA, "--json=v2"],
                 capture_output=True,
                 text=True,
                 timeout=10

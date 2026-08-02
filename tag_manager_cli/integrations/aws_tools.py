@@ -1,11 +1,28 @@
 """AWS tools for querying AWS resources using existing SSO authentication."""
 
+import shlex
+import shutil
+import subprocess
+import sys
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from botocore.exceptions import ClientError
 
 from ..utils.aws_auth import aws_auth
 from ..utils.core_storage import list_all_records
+from ..utils.public_executables import (
+    PUBLIC_TAGS_EXECUTABLE,
+    resolve_public_tags_executable,
+)
+
+
+def _find_public_tags_executable() -> str | None:
+    """Find a canonical packaged or PATH-installed public Tags executable."""
+    for candidate in (sys.executable, shutil.which(PUBLIC_TAGS_EXECUTABLE)):
+        resolved = resolve_public_tags_executable(candidate)
+        if resolved:
+            return resolved
+    return None
 
 
 class AWSTools:
@@ -775,7 +792,7 @@ class AWSTools:
             if not cur_config or cur_config.status != 'active':
                 return {
                     'error': 'CUR not configured',
-                    'suggestion': 'CUR (Cost and Usage Reports) is not available. Falling back to Cost Explorer API would provide less detail. Run "cost setup detect" to configure CUR.',
+                    'suggestion': 'CUR (Cost and Usage Reports) is not available. Falling back to Cost Explorer API would provide less detail. Run "bluearch-aws-tags cost setup detect" to configure CUR.',
                     'cur_available': False
                 }
 
@@ -1865,18 +1882,22 @@ bluearch-aws-tags <command>
     @classmethod
     def run_tag_manager_command(cls, command: str, args: str = "") -> Dict[str, Any]:
         """Run a bluearch-aws-tags CLI command (safe commands only)."""
-        import subprocess
-        import shlex
-
         # Normalize command
         full_command = f"{command} {args}".strip()
+        try:
+            command_argv = shlex.split(full_command)
+        except ValueError as exc:
+            return {
+                'error': f"Invalid command arguments: {exc}",
+                'message': 'Use normal CLI argv without shell syntax',
+            }
 
         # Check if command is allowed
-        is_allowed = False
-        for allowed in cls.ALLOWED_CLI_COMMANDS:
-            if full_command.startswith(allowed) or command.startswith(allowed):
-                is_allowed = True
-                break
+        allowed_prefixes = [tuple(shlex.split(allowed)) for allowed in cls.ALLOWED_CLI_COMMANDS]
+        is_allowed = any(
+            tuple(command_argv[:len(prefix)]) == prefix
+            for prefix in allowed_prefixes
+        )
 
         if not is_allowed:
             return {
@@ -1886,15 +1907,25 @@ bluearch-aws-tags <command>
             }
 
         # Block dangerous flags
-        if '--force' in full_command or '-f' in full_command.split():
+        if any(
+            (part.startswith('-f') and not part.startswith('--'))
+            or part == '--force'
+            or part.startswith('--force=')
+            for part in command_argv
+        ):
             return {
                 'error': 'The --force flag is not allowed for safety',
                 'message': 'Remove --force and try again'
             }
 
         try:
-            # Build the command
-            cmd_parts = ['python', '-m', 'tag_manager_cli.main'] + shlex.split(full_command)
+            executable = _find_public_tags_executable()
+            if executable is None:
+                return {
+                    'error': 'A safe bluearch-aws-tags executable was not found',
+                    'command': f"bluearch-aws-tags {full_command}",
+                }
+            cmd_parts = [executable, *command_argv]
 
             # Execute with timeout
             result = subprocess.run(
@@ -1902,7 +1933,6 @@ bluearch-aws-tags <command>
                 capture_output=True,
                 text=True,
                 timeout=60,
-                env=None  # Inherit environment
             )
 
             output = result.stdout

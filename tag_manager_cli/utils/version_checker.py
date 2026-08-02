@@ -6,10 +6,12 @@ from .. import __version__
 
 console = console.Console()
 
-import io
-
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+if sys.stdout is sys.__stdout__ and sys.stderr is sys.__stderr__:
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+        sys.stderr.reconfigure(encoding="utf-8")
+    except (AttributeError, OSError):
+        pass
 
 def is_dev_version(version: str) -> bool:
     """

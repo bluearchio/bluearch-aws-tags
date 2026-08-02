@@ -3,10 +3,15 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
-from tag_manager_cli.commands import ai_commands, lifecycle_commands
+import pytest
+import typer
+
+from tag_manager_cli.commands import ai_commands, cost_commands, lifecycle_commands
 from tag_manager_cli.integrations.aws_tools import AWSTools
 from tag_manager_cli.modules import multi_account_discovery as multi_account_module
+from tag_manager_cli.modules.finops.cur_setup import CURConfiguration, CURSetup
 from tag_manager_cli.services.slack_notification_service import SlackConfig, SlackNotificationService
 from tag_manager_cli.utils.command_suggestions import CommandSuggestions
 
@@ -162,3 +167,119 @@ def test_slack_batch_summary_contains_public_lifecycle_commands():
     texts = [block.get("text", {}).get("text", "") for block in payloads[0]["blocks"]]
     assert any("bluearch-aws-tags lifecycle review" in text for text in texts)
     assert all("tag-manager lifecycle" not in text for text in texts)
+
+
+@pytest.mark.parametrize("action", ["detect", "validate"])
+def test_pending_cost_setup_guidance_uses_registered_public_detect(
+    monkeypatch,
+    capsys,
+    action,
+):
+    pending = SimpleNamespace(status="pending")
+    monkeypatch.setattr(CURSetup, "detect_existing_cur", lambda *_args, **_kwargs: pending)
+
+    try:
+        cost_commands.cost_setup.__wrapped__(
+            action=action,
+            bucket=None,
+            database=None,
+            table=None,
+            force=False,
+        )
+    except typer.Exit as exc:
+        assert exc.exit_code == 0
+
+    output = capsys.readouterr().out
+    assert "bluearch-aws-tags cost setup detect" in output
+    assert "cost setup status" not in output
+
+
+def test_existing_pending_managed_cur_prints_public_detect_command(capsys):
+    pending = SimpleNamespace(report_name="tag-manager-cur", status="pending")
+
+    class Setup:
+        def detect_existing_cur(self):
+            return pending
+
+        def display_cur_status(self, _config):
+            return None
+
+    cost_commands._deploy_cur(Setup())
+
+    output = capsys.readouterr().out
+    assert "bluearch-aws-tags cost setup detect" in output
+
+
+def test_cur_detection_pending_state_prints_public_detect_command(monkeypatch, capsys):
+    pending = CURConfiguration(
+        account_id="123456789012",
+        report_name="tag-manager-cur",
+        s3_bucket="cur-bucket",
+        s3_prefix="reports",
+        athena_database="",
+        athena_table="",
+        status="pending",
+    )
+    setup = CURSetup()
+    monkeypatch.setattr(
+        setup,
+        "_get_client",
+        lambda _service: SimpleNamespace(
+            get_caller_identity=lambda: {"Account": "123456789012"}
+        ),
+    )
+    monkeypatch.setattr(
+        setup,
+        "_find_cur_reports",
+        lambda: [
+            {
+                "ReportName": "tag-manager-cur",
+                "S3Bucket": "cur-bucket",
+                "S3Prefix": "reports",
+            }
+        ],
+    )
+    monkeypatch.setattr(setup, "_find_cur_databases", lambda: [])
+    monkeypatch.setattr(setup, "_match_cur_config", lambda *_args: pending)
+
+    assert setup.detect_existing_cur(force_refresh=True) is pending
+
+    output = capsys.readouterr().out
+    assert "bluearch-aws-tags cost setup detect" in output
+
+
+def test_aws_tools_pending_cur_guidance_uses_registered_public_detect(monkeypatch):
+    pending = SimpleNamespace(status="pending")
+    monkeypatch.setattr(CURSetup, "detect_existing_cur", lambda *_args, **_kwargs: pending)
+
+    result = AWSTools.query_cur_costs("show monthly cost")
+
+    assert result["cur_available"] is False
+    assert "bluearch-aws-tags cost setup detect" in result["suggestion"]
+    assert 'Run "cost setup detect"' not in result["suggestion"]
+
+
+def test_cur_only_fallback_guidance_uses_registered_public_detect(monkeypatch):
+    from tag_manager_cli.modules.finops.cur_client import CostDataSource
+
+    pending = SimpleNamespace(status="pending")
+    messages = []
+    monkeypatch.setattr(CURSetup, "detect_existing_cur", lambda *_args, **_kwargs: pending)
+    monkeypatch.setattr(
+        CostDataSource,
+        "get_source",
+        classmethod(lambda _cls, config: object() if config is pending else None),
+    )
+    monkeypatch.setattr(cost_commands, "print_safe", messages.append)
+    monkeypatch.setattr(cost_commands, "print_warning", messages.append)
+
+    cost_commands.cost_accounts.__wrapped__(
+        start_date=None,
+        end_date=None,
+        include_services=False,
+        format_type="table",
+    )
+
+    output = "\n".join(messages)
+    assert "bluearch-aws-tags cost setup detect" in output
+    assert "Run 'cost setup detect'" not in output

@@ -19,6 +19,7 @@ cost_app = typer.Typer(
     no_args_is_help=False
 )
 console = Console()
+PUBLIC_CUR_DETECT_COMMAND = "bluearch-aws-tags cost setup detect"
 
 
 def show_cost_help():
@@ -61,11 +62,11 @@ def show_cost_help():
 
     console.print("[bold red]SETUP & CONFIGURATION[/bold red]:")
     console.print("- [cyan]setup detect[/cyan]    - Auto-detect existing CUR and display status")
-    console.print("- [cyan]setup create[/cyan]    - Deploy CUR infrastructure through bluearch-core")
+    console.print("- [cyan]setup create[/cyan]    - Deploy CUR infrastructure through bluearch-aws-core")
     console.print("- [cyan]setup validate[/cyan]  - Test CUR access and query capability\n")
 
     console.print("[bold white]QUICK START WORKFLOW[/bold white]:")
-    console.print("1. [dim]cost setup detect[/dim]           # Check for existing CUR")
+    console.print(f"1. [dim]{PUBLIC_CUR_DETECT_COMMAND}[/dim]           # Check for existing CUR")
     console.print("2. [dim]cost summary[/dim]                # Overview of all costs")
     console.print("3. [dim]cost services[/dim]               # Breakdown by service")
     console.print("4. [dim]cost ec2[/dim]                    # Deep-dive into EC2")
@@ -131,11 +132,11 @@ def cost_setup(
         help="Force reconfiguration"
     )
 ):
-    """Configure CUR access or create new CUR through bluearch-core.
+    """Configure CUR access or create new CUR through bluearch-aws-core.
 
     Actions:
       detect    - Auto-detect existing CUR configuration and display status
-      create    - Deploy CUR infrastructure through bluearch-core
+      create    - Deploy CUR infrastructure through bluearch-aws-core
       configure - Manually configure CUR settings
       validate  - Test CUR access and query capability
     """
@@ -152,7 +153,10 @@ def cost_setup(
             if config.status == 'pending':
                 # CUR exists but data not ready yet - don't offer validation
                 console.print("\n[yellow]CUR is set up but data is not available yet.[/yellow]")
-                console.print("Check back in ~24 hours and run 'cost setup status'")
+                console.print(
+                    "Check back in ~24 hours and run "
+                    "'bluearch-aws-tags cost setup detect'"
+                )
             else:
                 setup.display_cur_status(config)
                 # Offer to validate only for active configs
@@ -194,12 +198,14 @@ def cost_setup(
     elif action == "validate":
         config = setup.detect_existing_cur()
         if not config:
-            print_error("No CUR configuration found. Run 'cost setup detect' first.")
+            print_error(f"No CUR configuration found. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
             raise typer.Exit(1)
 
         if config.status == 'pending':
             print_warning("CUR is set up but data is not available yet (~24 hours).")
-            print_safe("Run 'cost setup status' later to check when data is ready.")
+            print_safe(
+                "Run 'bluearch-aws-tags cost setup detect' later to check when data is ready."
+            )
             raise typer.Exit(0)
 
         result = setup.validate_cur_access(config)
@@ -227,7 +233,9 @@ def _deploy_cur(setup, bucket: Optional[str] = None):
         setup.display_cur_status(existing_config)
         if existing_config.status == 'pending':
             console.print("\n[dim]CUR data is still being prepared (~24 hours after creation).[/dim]")
-            console.print("[dim]Run 'cost setup detect' later to check when data is ready.[/dim]")
+            console.print(
+                "[dim]Run 'bluearch-aws-tags cost setup detect' later to check when data is ready.[/dim]"
+            )
         else:
             console.print("\n[dim]CUR is already configured and active.[/dim]")
             console.print("[dim]Use 'cost setup validate' to test access.[/dim]")
@@ -921,7 +929,7 @@ def cost_accounts(
     # Check if CUR is available (required for account breakdown)
     if not isinstance(data_source, CURClient):
         print_warning("Account breakdown requires CUR. Cost Explorer fallback not supported.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1031,7 +1039,7 @@ def cost_resources(
 
     if not isinstance(data_source, CURClient):
         print_warning("Resource-level breakdown requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1119,7 +1127,7 @@ def cost_daily(
 
     if not isinstance(data_source, CURClient):
         print_warning("Daily summary requires CUR for amortized costs.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1232,7 +1240,7 @@ def cost_summary(
 
     if not isinstance(data_source, CURClient):
         print_warning("Cost summary requires CUR for detailed charge types.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1326,7 +1334,7 @@ def cost_pricing(
 
     if not isinstance(data_source, CURClient):
         print_warning("Pricing model analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1438,7 +1446,7 @@ def cost_savings_plans(
 
     if not isinstance(data_source, CURClient):
         print_warning("Savings Plans analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1558,7 +1566,7 @@ def cost_reservations(
 
     if not isinstance(data_source, CURClient):
         print_warning("Reserved Instance analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1657,7 +1665,7 @@ def cost_data_transfer(
 
     if not isinstance(data_source, CURClient):
         print_warning("Data transfer analysis requires CUR.")
-        print_safe("Run 'cost setup detect' to configure CUR access.")
+        print_safe(f"Run '{PUBLIC_CUR_DETECT_COMMAND}' to configure CUR access.")
         return
 
     # Query
@@ -1779,7 +1787,7 @@ def cost_ec2(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("EC2 analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"EC2 analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "instances":
@@ -1883,7 +1891,7 @@ def cost_s3(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("S3 analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"S3 analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "buckets":
@@ -1982,7 +1990,7 @@ def cost_rds(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("RDS analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"RDS analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "engines":
@@ -2084,7 +2092,7 @@ def cost_lambda(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Lambda analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Lambda analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     if view == "breakdown":
@@ -2163,7 +2171,7 @@ def cost_regions(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Regional analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Regional analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     result = data_source.get_costs_by_region(start, end, include_services)
@@ -2236,7 +2244,7 @@ def cost_usage_types(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Usage type analysis requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Usage type analysis requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     result = data_source.get_costs_by_usage_type(start, end, service, limit)
@@ -2325,7 +2333,7 @@ def cost_compare(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Cost comparison requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Cost comparison requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     # Parse periods
@@ -2526,7 +2534,7 @@ def cost_forecast(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Cost forecasting requires CUR. Run 'cost setup detect' first.")
+        print_warning(f"Cost forecasting requires CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     # Get historical data
@@ -2734,7 +2742,7 @@ def cost_query(
 
     data_source = _get_data_source()
     if not isinstance(data_source, CURClient):
-        print_warning("Custom queries require CUR. Run 'cost setup detect' first.")
+        print_warning(f"Custom queries require CUR. Run '{PUBLIC_CUR_DETECT_COMMAND}' first.")
         return
 
     console.print(f"[dim]Query: {sql.strip()[:100]}{'...' if len(sql) > 100 else ''}[/dim]\n")
