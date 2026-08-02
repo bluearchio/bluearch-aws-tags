@@ -3,8 +3,8 @@ set -euo pipefail
 
 REPO="bluearchio/bluearch-aws-tags"
 APP_NAME="BlueArch AWS Tags"
-VERSION="latest"
-DIST_BASE_URL="https://dist.bluearch.io"
+VERSION="${BLUEARCH_VERSION:-latest}"
+DIST_BASE_URL="${BLUEARCH_DIST_BASE_URL:-}"
 INSTALLER_NAME="install-linux.sh"
 
 log() {
@@ -57,8 +57,26 @@ verify_installer() {
     fail "Checksum verification failed for ${INSTALLER_NAME}"
 }
 
+canonical_release_version() {
+  local version="$1"
+  case "$version" in
+    latest) printf '%s' "$version" ;;
+    v[0-9]*.[0-9]*.[0-9]*)
+      [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+        fail "Release version must be latest, X.Y.Z, or vX.Y.Z: ${version}"
+      printf '%s' "$version"
+      ;;
+    [0-9]*.[0-9]*.[0-9]*)
+      [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+        fail "Release version must be latest, X.Y.Z, or vX.Y.Z: ${version}"
+      printf 'v%s' "$version"
+      ;;
+    *) fail "Release version must be latest, X.Y.Z, or vX.Y.Z: ${version}" ;;
+  esac
+}
+
 linux_install() {
-  local script_dir local_installer tmp_dir release_url
+  local script_dir local_installer tmp_dir release_url resolved_version
   script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
   local_installer="${script_dir}/scripts/${INSTALLER_NAME}"
   export BLUEARCH_DIST_BASE_URL="$DIST_BASE_URL"
@@ -74,7 +92,14 @@ linux_install() {
   require_command awk
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' EXIT
-  release_url="${DIST_BASE_URL%/}/releases/${REPO##*/}/${VERSION}"
+  resolved_version="$(canonical_release_version "$VERSION")" || return 1
+  if [[ -n "$DIST_BASE_URL" ]]; then
+    release_url="${DIST_BASE_URL%/}/releases/${REPO##*/}/${resolved_version}"
+  elif [[ "$resolved_version" == "latest" ]]; then
+    release_url="https://github.com/${REPO}/releases/latest/download"
+  else
+    release_url="https://github.com/${REPO}/releases/download/${resolved_version}"
+  fi
   log "Downloading verified ${APP_NAME} release installer (${VERSION})..."
   curl -fsSL "${release_url}/${INSTALLER_NAME}" -o "${tmp_dir}/${INSTALLER_NAME}"
   curl -fsSL "${release_url}/SHA256SUMS" -o "${tmp_dir}/SHA256SUMS"

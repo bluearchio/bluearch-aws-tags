@@ -30,12 +30,38 @@ require_command() {
   command -v "$1" >/dev/null 2>&1 || fail "Missing required command: $1"
 }
 
+canonical_release_version() {
+  local version="$1"
+  case "$version" in
+    latest) printf '%s' "$version" ;;
+    v[0-9]*.[0-9]*.[0-9]*)
+      [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+        fail "Release version must be latest, X.Y.Z, or vX.Y.Z: ${version}"
+      printf '%s' "$version"
+      ;;
+    [0-9]*.[0-9]*.[0-9]*)
+      [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || \
+        fail "Release version must be latest, X.Y.Z, or vX.Y.Z: ${version}"
+      printf 'v%s' "$version"
+      ;;
+    *) fail "Release version must be latest, X.Y.Z, or vX.Y.Z: ${version}" ;;
+  esac
+}
+
 release_base_url() {
   local repo="$1"
-  local version="$2"
+  local version
   local project="${repo##*/}"
-  local dist_base="${BLUEARCH_DIST_BASE_URL:-https://dist.bluearch.io}"
-  printf '%s/releases/%s/%s' "${dist_base%/}" "$project" "$version"
+  local mirror_base="${BLUEARCH_DIST_BASE_URL:-}"
+  version="$(canonical_release_version "$2")" || return 1
+
+  if [[ -n "$mirror_base" ]]; then
+    printf '%s/releases/%s/%s' "${mirror_base%/}" "$project" "$version"
+  elif [[ "$version" == "latest" ]]; then
+    printf 'https://github.com/%s/releases/latest/download' "$repo"
+  else
+    printf 'https://github.com/%s/releases/download/%s' "$repo" "$version"
+  fi
 }
 
 download_file() {
@@ -81,7 +107,7 @@ install_release() (
   local base_url
   local tmp_dir
 
-  base_url="$(release_base_url "$repo" "$version")"
+  base_url="$(release_base_url "$repo" "$version")" || return 1
   tmp_dir="$(mktemp -d)"
   trap 'rm -rf "$tmp_dir"' EXIT
 

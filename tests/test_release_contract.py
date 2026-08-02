@@ -24,6 +24,13 @@ def _run_text(job: dict) -> str:
     return "\n".join(step.get("run", "") for step in job.get("steps", []))
 
 
+def _named_step(job: dict, name: str) -> tuple[int, dict]:
+    for index, step in enumerate(job["steps"]):
+        if step.get("name") == name:
+            return index, step
+    raise AssertionError(f"workflow job has no step named {name!r}")
+
+
 def test_release_graph_verifies_tag_and_main_before_builds() -> None:
     jobs = _workflow()["jobs"]
 
@@ -31,6 +38,7 @@ def test_release_graph_verifies_tag_and_main_before_builds() -> None:
     assert jobs["linux"]["needs"] == "verify"
     assert jobs["macos"]["needs"] == "verify"
     assert set(jobs["publish"]["needs"]) == {"verify", "linux", "macos"}
+    assert jobs["homebrew"]["needs"] == "publish"
     verify_commands = _run_text(jobs["verify"])
     assert "origin/main" in verify_commands
     assert "tag_manager_cli/__init__.py" in verify_commands
@@ -73,15 +81,151 @@ def test_branch_named_like_a_release_tag_cannot_use_manual_dispatch() -> None:
     assert "immutable tag ref" in gate
 
 
-def test_release_verifies_final_artifacts_and_has_no_inline_stamping_or_tap_mutation() -> None:
+def test_release_verifies_final_artifacts_without_inline_version_stamping() -> None:
     jobs = _workflow()["jobs"]
     workflow_text = WORKFLOW.read_text(encoding="utf-8")
 
     assert "scripts/verify_macos_artifact.sh" in _run_text(jobs["macos"])
     assert "SHA256SUMS" in _run_text(jobs["publish"])
     assert "Stamp release version" not in workflow_text
-    assert "homebrew-tap" not in workflow_text
-    assert "update_formula.py" not in workflow_text
+
+
+def test_cross_repo_token_is_validated_before_github_release_publication() -> None:
+    publish = _workflow()["jobs"]["publish"]
+    token_index, token = _named_step(
+        publish, "Validate Homebrew tap token before publication"
+    )
+    release_index, release = _named_step(publish, "Publish immutable release assets")
+
+    assert token_index < release_index
+    assert token["env"]["GH_TOKEN"] == "${{ secrets.HOMEBREW_TAP_TOKEN_2 }}"
+    assert '"repos/${HOMEBREW_TAP_REPO}"' in token["run"]
+    assert ".permissions.push" in token["run"]
+    assert ".allow_auto_merge" in token["run"]
+    assert '"${HOMEBREW_TAP_REPO}"$\'\\ttrue\\ttrue\'' in token["run"]
+    assert 'gh pr list --repo "$HOMEBREW_TAP_REPO"' in token["run"]
+    assert "github.token" not in str(token)
+    assert release["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "GH_REPO": "${{ github.repository }}",
+    }
+
+
+def test_release_publication_is_resumable_and_never_mutates_public_assets() -> None:
+    _, release = _named_step(
+        _workflow()["jobs"]["publish"], "Publish immutable release assets"
+    )
+    commands = release["run"]
+
+    assert 'release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"' in commands
+    assert 'release_is_draft="$(gh api "$release_endpoint" --jq \'.draft\')"' in commands
+    assert 'if [[ "$release_is_draft" == "true" ]]' in commands
+    assert 'gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber' in commands
+    assert 'Release $RELEASE_TAG is already public; verifying it without mutation.' in commands
+    assert 'select(.state == "uploaded") | [.name, .digest]' in commands
+    assert 'diff -q "$expected_assets" "$remote_assets"' in commands
+    assert 'gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false' in commands
+    for subcommand in ("create", "upload", "edit"):
+        assert f"gh release {subcommand}" in commands
+        assert '--repo "$GITHUB_REPOSITORY"' in commands
+
+
+def test_formula_inputs_are_the_exact_verified_macos_asset_and_sha() -> None:
+    workflow = _workflow()
+    publish = workflow["jobs"]["publish"]
+    _, checksums = _named_step(publish, "Generate final checksums")
+    homebrew = workflow["jobs"]["homebrew"]
+    _, update = _named_step(homebrew, "Update Homebrew formula from verified release")
+
+    assert checksums["id"] == "final_checksums"
+    assert 'formula_asset="${BINARY_NAME}-macos-arm64.zip"' in checksums["run"]
+    assert 'sha256sum "$formula_asset"' in checksums["run"]
+    assert publish["outputs"]["formula_asset"] == (
+        "${{ steps.final_checksums.outputs.formula_asset }}"
+    )
+    assert publish["outputs"]["formula_sha256"] == (
+        "${{ steps.final_checksums.outputs.formula_sha256 }}"
+    )
+    assert homebrew["env"]["FORMULA_ASSET"] == (
+        "${{ needs.publish.outputs.formula_asset }}"
+    )
+    assert homebrew["env"]["FORMULA_SHA256"] == (
+        "${{ needs.publish.outputs.formula_sha256 }}"
+    )
+    assert '"$FORMULA_ASSET" == "${BINARY_NAME}-macos-arm64.zip"' in update["run"]
+    assert '"$FORMULA_SHA256" =~ ^[0-9a-f]{64}$' in update["run"]
+    assert "python3 scripts/update_formula.py" in update["run"]
+    assert '--repo "$GITHUB_REPOSITORY"' in update["run"]
+    assert '--version "$RELEASE_TAG"' in update["run"]
+    assert '--asset "$FORMULA_ASSET"' in update["run"]
+    assert '--sha256 "$FORMULA_SHA256"' in update["run"]
+    assert "https://github.com" not in update["run"]
+
+
+def test_tap_pr_is_scoped_to_main_and_release_branch_from_origin_main() -> None:
+    homebrew = _workflow()["jobs"]["homebrew"]
+    _, checkout = _named_step(homebrew, "Checkout Homebrew tap main")
+    _, update = _named_step(homebrew, "Update Homebrew formula from verified release")
+    _, pull_request = _named_step(homebrew, "Create or update Homebrew tap pull request")
+
+    assert checkout["with"] == {
+        "repository": "${{ env.HOMEBREW_TAP_REPO }}",
+        "token": "${{ secrets.HOMEBREW_TAP_TOKEN_2 }}",
+        "ref": "main",
+        "fetch-depth": "0",
+        "path": "homebrew-tap",
+        "persist-credentials": "false",
+    }
+    assert 'branch="release/${HOMEBREW_FORMULA}-${RELEASE_TAG}"' in update["run"]
+    assert 'git checkout -B "$branch" refs/remotes/origin/main' in update["run"]
+    assert pull_request["id"] == "homebrew_pr"
+    assert 'remote_url="$(git remote get-url origin)"' in pull_request["run"]
+    assert 'git push --force-with-lease' in pull_request["run"]
+    assert 'gh pr list --repo "$HOMEBREW_TAP_REPO" --base main --head "$branch"' in pull_request["run"]
+    assert "gh pr create \\" in pull_request["run"]
+    assert '--repo "$HOMEBREW_TAP_REPO" \\' in pull_request["run"]
+    assert "--base main \\" in pull_request["run"]
+    assert '--head "$branch" \\' in pull_request["run"]
+    assert "git push origin main" not in pull_request["run"]
+    assert "--admin" not in pull_request["run"]
+
+
+def test_tap_auto_merge_is_conditional_and_waits_for_required_checks() -> None:
+    homebrew = _workflow()["jobs"]["homebrew"]
+    _, pull_request = _named_step(homebrew, "Create or update Homebrew tap pull request")
+    _, merge = _named_step(
+        homebrew, "Request Homebrew tap auto-merge after required checks"
+    )
+
+    assert 'echo "pr_number=" >> "$GITHUB_OUTPUT"' in pull_request["run"]
+    assert merge["if"] == "steps.homebrew_pr.outputs.pr_number != ''"
+    assert merge["env"]["GH_TOKEN"] == "${{ secrets.HOMEBREW_TAP_TOKEN_2 }}"
+    assert merge["env"]["PR_NUMBER"] == (
+        "${{ steps.homebrew_pr.outputs.pr_number }}"
+    )
+    merge_command = 'gh pr merge "$PR_NUMBER" --repo "$HOMEBREW_TAP_REPO" --auto --squash --delete-branch'
+    assert merge_command in merge["run"]
+    assert "--admin" not in merge["run"]
+
+    _, wait = _named_step(homebrew, "Wait for Homebrew formula merge")
+    assert wait["timeout-minutes"] == "125"
+    assert wait["env"]["PR_NUMBER"] == "${{ steps.homebrew_pr.outputs.pr_number }}"
+    assert 'gh pr view "$PR_NUMBER" --repo "$HOMEBREW_TAP_REPO" --json state' in wait["run"]
+    assert "MERGED) exit 0" in wait["run"]
+    assert "CLOSED)" in wait["run"]
+    assert "Timed out waiting for Homebrew tap PR" in wait["run"]
+
+
+def test_every_checkout_disables_persisted_credentials() -> None:
+    steps = [
+        step
+        for job in _workflow()["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("uses") == "actions/checkout@v4"
+    ]
+
+    assert steps
+    assert all(step["with"]["persist-credentials"] == "false" for step in steps)
 
 
 def test_linux_release_archive_requires_exact_public_version_identity() -> None:

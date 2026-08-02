@@ -15,6 +15,8 @@ concurrency:
 
 env:
   BINARY_NAME: bluearch-aws-tags
+  HOMEBREW_FORMULA: bluearch-aws-tags
+  HOMEBREW_TAP_REPO: bluearchio/homebrew-tap
   RELEASE_TAG: ${{ github.ref_name }}
 
 jobs:
@@ -276,6 +278,9 @@ jobs:
       attestations: write
       artifact-metadata: write
       id-token: write
+    outputs:
+      formula_asset: ${{ steps.final_checksums.outputs.formula_asset }}
+      formula_sha256: ${{ steps.final_checksums.outputs.formula_sha256 }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -283,16 +288,41 @@ jobs:
           path: release-assets
           merge-multiple: true
       - name: Generate final checksums
+        id: final_checksums
         shell: bash
         run: |
           set -euo pipefail
           cd release-assets
-          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' | sort -z | xargs -0 sha256sum > SHA256SUMS
+          checksum_tmp="$RUNNER_TEMP/SHA256SUMS"
+          find . -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\0' | sort -z | xargs -0 sha256sum > "$checksum_tmp"
+          mv "$checksum_tmp" SHA256SUMS
+          sha256sum -c SHA256SUMS
+          formula_asset="${BINARY_NAME}-macos-arm64.zip"
+          [[ -f "$formula_asset" ]] || { echo "::error::Missing Homebrew release asset: $formula_asset"; exit 1; }
+          formula_sha256="$(sha256sum "$formula_asset" | awk '{print $1}')"
+          [[ "$formula_sha256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::Invalid Homebrew asset SHA-256"; exit 1; }
+          {
+            echo "formula_asset=$formula_asset"
+            echo "formula_sha256=$formula_sha256"
+          } >> "$GITHUB_OUTPUT"
       - name: Generate artifact provenance attestations
         if: github.event.repository.private == false
         uses: actions/attest@v4
         with:
           subject-path: release-assets/*
+      - name: Validate Homebrew tap token before publication
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${GH_TOKEN:-}" ]] || { echo "::error::Missing HOMEBREW_TAP_TOKEN_2"; exit 1; }
+          tap_access="$(gh api --method GET -H "Accept: application/vnd.github+json" "repos/${HOMEBREW_TAP_REPO}" --jq '[.full_name, (.permissions.push // false), (.allow_auto_merge // false)] | @tsv')"
+          [[ "$tap_access" == "${HOMEBREW_TAP_REPO}"$'\ttrue\ttrue' ]] || {
+            echo "::error::The tap token needs push access and ${HOMEBREW_TAP_REPO} must have auto-merge enabled"
+            exit 1
+          }
+          gh pr list --repo "$HOMEBREW_TAP_REPO" --state open --limit 1 >/dev/null
       - name: Publish immutable release assets
         env:
           GH_TOKEN: ${{ github.token }}
@@ -300,11 +330,191 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "::error::Release $RELEASE_TAG already exists; create a new tag"
+          release_endpoint="repos/${GITHUB_REPOSITORY}/releases/tags/${RELEASE_TAG}"
+          if release_id="$(gh api "$release_endpoint" --jq '.id' 2>/dev/null)"; then
+            release_is_draft="$(gh api "$release_endpoint" --jq '.draft')"
+            if [[ "$release_is_draft" == "true" ]]; then
+              echo "::notice::Resuming existing draft release $RELEASE_TAG."
+            elif [[ "$release_is_draft" == "false" ]]; then
+              echo "::notice::Release $RELEASE_TAG is already public; verifying it without mutation."
+            else
+              echo "::error::Unexpected draft state for release $RELEASE_TAG."
+              exit 1
+            fi
+          else
+            gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$RELEASE_TAG" --generate-notes
+            release_id="$(gh api "$release_endpoint" --jq '.id')"
+            release_is_draft=true
+          fi
+          [[ "$release_id" =~ ^[0-9]+$ ]] || { echo "::error::Invalid GitHub release id"; exit 1; }
+
+          if [[ "$release_is_draft" == "true" ]]; then
+            gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+          fi
+
+          expected_assets="$RUNNER_TEMP/expected-release-assets.tsv"
+          remote_assets="$RUNNER_TEMP/remote-release-assets.tsv"
+          : > "$expected_assets"
+          for asset_path in release-assets/*; do
+            asset_name="${asset_path##*/}"
+            [[ "$asset_name" =~ ^[A-Za-z0-9._-]+$ ]] || { echo "::error::Unsafe release asset name: $asset_name"; exit 1; }
+            asset_sha256="$(sha256sum "$asset_path" | awk '{print $1}')"
+            printf '%s\tsha256:%s\n' "$asset_name" "$asset_sha256" >> "$expected_assets"
+          done
+          LC_ALL=C sort -o "$expected_assets" "$expected_assets"
+
+          assets_verified=false
+          for attempt in {1..10}; do
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/releases/${release_id}/assets?per_page=100" \
+              --jq '.[] | select(.state == "uploaded") | [.name, .digest] | @tsv' | \
+              LC_ALL=C sort > "$remote_assets"
+            if diff -q "$expected_assets" "$remote_assets" >/dev/null; then
+              assets_verified=true
+              break
+            fi
+            echo "::notice::Release asset digests are not ready (attempt ${attempt}/10); retrying."
+            sleep 3
+          done
+          if [[ "$assets_verified" != "true" ]]; then
+            echo "::error::GitHub release assets do not exactly match the verified local digests."
+            diff -u "$expected_assets" "$remote_assets"
             exit 1
           fi
-          gh release create "$RELEASE_TAG" release-assets/* --draft --verify-tag --title "$RELEASE_TAG" --generate-notes
-          gh release edit "$RELEASE_TAG" --draft=false
-      - name: Record formula promotion checkpoint
-        run: echo "::notice::Promote the verified dist.bluearch.io artifact to the Homebrew tap in the separate post-release checkpoint."
+          if [[ "$release_is_draft" == "true" ]]; then
+            gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          fi
+
+  homebrew:
+    name: Propose verified Homebrew formula
+    needs: publish
+    runs-on: ubuntu-24.04
+    if: startsWith(github.ref_name, 'v')
+    permissions:
+      contents: read
+    env:
+      FORMULA_ASSET: ${{ needs.publish.outputs.formula_asset }}
+      FORMULA_SHA256: ${{ needs.publish.outputs.formula_sha256 }}
+    steps:
+      - name: Validate Homebrew tap token
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ -n "${GH_TOKEN:-}" ]] || { echo "::error::Missing HOMEBREW_TAP_TOKEN_2"; exit 1; }
+          tap_access="$(gh api --method GET -H "Accept: application/vnd.github+json" "repos/${HOMEBREW_TAP_REPO}" --jq '[.full_name, (.permissions.push // false), (.allow_auto_merge // false)] | @tsv')"
+          [[ "$tap_access" == "${HOMEBREW_TAP_REPO}"$'\ttrue\ttrue' ]] || {
+            echo "::error::The tap token needs push access and ${HOMEBREW_TAP_REPO} must have auto-merge enabled"
+            exit 1
+          }
+          gh pr list --repo "$HOMEBREW_TAP_REPO" --state open --limit 1 >/dev/null
+      - name: Checkout Homebrew tap main
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.HOMEBREW_TAP_REPO }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+          ref: main
+          fetch-depth: 0
+          path: homebrew-tap
+          persist-credentials: false
+      - name: Update Homebrew formula from verified release
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$FORMULA_ASSET" == "${BINARY_NAME}-macos-arm64.zip" ]] || { echo "::error::Unexpected Homebrew asset"; exit 1; }
+          [[ "$FORMULA_SHA256" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::Invalid Homebrew asset SHA-256"; exit 1; }
+          cd homebrew-tap
+          branch="release/${HOMEBREW_FORMULA}-${RELEASE_TAG}"
+          git checkout -B "$branch" refs/remotes/origin/main
+          python3 scripts/update_formula.py \
+            --formula "Formula/${HOMEBREW_FORMULA}.rb" \
+            --repo "$GITHUB_REPOSITORY" \
+            --version "$RELEASE_TAG" \
+            --asset "$FORMULA_ASSET" \
+            --sha256 "$FORMULA_SHA256" \
+            --binary "$BINARY_NAME"
+          ruby -c "Formula/${HOMEBREW_FORMULA}.rb"
+      - name: Create or update Homebrew tap pull request
+        id: homebrew_pr
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd homebrew-tap
+          branch="release/${HOMEBREW_FORMULA}-${RELEASE_TAG}"
+          [[ "$(git branch --show-current)" == "$branch" ]] || { echo "::error::Unexpected tap branch"; exit 1; }
+          remote_url="$(git remote get-url origin)"
+          [[ "$remote_url" == "https://github.com/${HOMEBREW_TAP_REPO}" || "$remote_url" == "https://github.com/${HOMEBREW_TAP_REPO}.git" ]] || {
+            echo "::error::Unexpected Homebrew tap remote: $remote_url"
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "Formula/${HOMEBREW_FORMULA}.rb"
+          if git diff --cached --quiet; then
+            echo "No Homebrew formula changes; no pull request is required."
+            echo "pr_number=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git commit -m "chore: update ${HOMEBREW_FORMULA} to ${RELEASE_TAG}"
+          gh auth setup-git --hostname github.com
+          remote_branch_sha="$(git ls-remote --heads origin "refs/heads/${branch}" | awk 'NR == 1 { print $1 }')"
+          if [[ -n "$remote_branch_sha" ]]; then
+            git push --force-with-lease="refs/heads/${branch}:${remote_branch_sha}" origin "HEAD:refs/heads/${branch}"
+          else
+            git push --force-with-lease origin "HEAD:refs/heads/${branch}"
+          fi
+          pr_number="$(gh pr list --repo "$HOMEBREW_TAP_REPO" --base main --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            gh pr create \
+              --repo "$HOMEBREW_TAP_REPO" \
+              --base main \
+              --head "$branch" \
+              --title "chore: update ${HOMEBREW_FORMULA} to ${RELEASE_TAG}" \
+              --body "Updates ${HOMEBREW_FORMULA} to ${RELEASE_TAG} from ${GITHUB_REPOSITORY}. The formula URL is generated by scripts/update_formula.py and points to the immutable GitHub Release asset." \
+              >/dev/null
+            pr_number="$(gh pr list --repo "$HOMEBREW_TAP_REPO" --base main --head "$branch" --state open --json number --jq '.[0].number // empty')"
+          fi
+          [[ "$pr_number" =~ ^[0-9]+$ ]] || { echo "::error::Unable to resolve Homebrew tap pull request"; exit 1; }
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+      - name: Request Homebrew tap auto-merge after required checks
+        if: steps.homebrew_pr.outputs.pr_number != ''
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+          PR_NUMBER: ${{ steps.homebrew_pr.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[0-9]+$ ]] || { echo "::error::Invalid Homebrew tap pull request number"; exit 1; }
+          gh pr merge "$PR_NUMBER" --repo "$HOMEBREW_TAP_REPO" --auto --squash --delete-branch
+      - name: Wait for Homebrew formula merge
+        timeout-minutes: 125
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN_2 }}
+          PR_NUMBER: ${{ steps.homebrew_pr.outputs.pr_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 7200))
+          while (( SECONDS < deadline )); do
+            if ! pr_state="$(gh pr view "$PR_NUMBER" --repo "$HOMEBREW_TAP_REPO" --json state --jq '.state')"; then
+              echo "::warning::Unable to read Homebrew tap PR state; retrying."
+              sleep 15
+              continue
+            fi
+            case "$pr_state" in
+              MERGED) exit 0 ;;
+              CLOSED)
+                echo "::error::Homebrew tap PR #${PR_NUMBER} closed without merging."
+                exit 1
+                ;;
+              OPEN) sleep 15 ;;
+              *)
+                echo "::error::Unexpected Homebrew tap PR state: ${pr_state}"
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Timed out waiting for Homebrew tap PR #${PR_NUMBER} to merge."
+          exit 1

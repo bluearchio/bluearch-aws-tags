@@ -113,10 +113,28 @@ def test_root_installer_is_public_only_and_dispatches_verified_linux_installer()
 
     assert 'REPO="bluearchio/bluearch-aws-tags"' in installer
     assert 'INSTALLER_NAME="install-linux.sh"' in installer
-    assert 'DIST_BASE_URL="https://dist.bluearch.io"' in installer
+    assert 'DIST_BASE_URL="${BLUEARCH_DIST_BASE_URL:-}"' in installer
+    assert "https://github.com/${REPO}/releases/latest/download" in installer
+    assert "https://github.com/${REPO}/releases/download/${resolved_version}" in installer
+    assert "https://dist.bluearch.io" not in installer
     assert "SHA256SUMS" in installer
     assert "tag-manager-cli" not in installer
     assert 'BINARY_NAME="tag-manager"' not in installer
+
+
+def test_linux_installer_defaults_to_github_with_optional_mirror_only() -> None:
+    installer = (ROOT / "scripts" / "install-linux.sh").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert "https://github.com/%s/releases/latest/download" in installer
+    assert "https://github.com/%s/releases/download/%s" in installer
+    assert 'mirror_base="${BLUEARCH_DIST_BASE_URL:-}"' in installer
+    assert "https://dist.bluearch.io" not in installer
+    assert (
+        "https://github.com/bluearchio/bluearch-aws-tags/releases/latest/download/install-linux.sh"
+        in readme
+    )
+    assert "BLUEARCH_DIST_BASE_URL" in readme
 
 
 def test_clean_uninstall_preserves_deprecated_closed_source_installation() -> None:
