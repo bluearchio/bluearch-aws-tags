@@ -4,13 +4,12 @@ This directory contains various tagging rule configurations for the AWS Tag Mana
 
 ## Rule Sets
 
-### 1. safe_default_rules.json (DEFAULT for Setup)
-**Purpose:** Safe, non-destructive tags for initial setup and untagged resources
+### 1. safe_default_rules.json (Legacy Example)
+**Purpose:** Reference data for the retired tagging-rule loader
 - Sets `Environment=unknown` and `Owner=unknown` on resources
 - Adds `NeedsReview=true` flag for easy identification
 - Marks resources with `ManagedBy=tag-manager-setup`
 - **Won't break anything** - just marks resources for review
-- **This is the default choice during setup wizard**
 
 ### 2. production_tagging_rules.json
 **Purpose:** Production-ready governance and cost tracking rules
@@ -36,19 +35,16 @@ This directory contains various tagging rule configurations for the AWS Tag Mana
 
 ## Usage
 
-### During Setup (Automatic)
-The setup wizard (`tag-manager setup`) will offer these rule sets:
-1. Safe Defaults (default) - Uses `safe_default_rules.json`
-2. Standard Rules - Uses `production_tagging_rules.json`
-3. Advanced Rules - Uses `advanced_tagging_rules.json`
+### Supported Public Workflow
 
-### Manual Loading
+These JSON files are retained as examples of the legacy tagging-rule format.
+The public CLI does not expose a command that loads them. Create and apply a
+supported lifecycle policy instead:
+
 ```bash
-# Load specific rule set
-tag-manager tags rules load config/safe_default_rules.json
-
-# Load with replacement
-tag-manager tags rules load config/production_tagging_rules.json --replace
+bluearch-aws-tags lifecycle policies create
+bluearch-aws-tags lifecycle scan
+bluearch-aws-tags lifecycle set-ttl --dry-run
 ```
 
 ## Safety Notes
@@ -59,7 +55,7 @@ tag-manager tags rules load config/production_tagging_rules.json --replace
 
 ## Best Practices
 
-1. **Start with safe defaults** during initial setup
-2. **Review and update** the "unknown" tags with proper values
-3. **Graduate to production rules** once comfortable with the system
-4. **Customize rules** based on your organization's needs
+1. **Treat these files as reference data**, not commands accepted by the public CLI
+2. **Create lifecycle policies** with `bluearch-aws-tags lifecycle policies create`
+3. **Preview changes** with `bluearch-aws-tags lifecycle set-ttl --dry-run`
+4. **Review policy compliance** with `bluearch-aws-tags policy check-compliance`

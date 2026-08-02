@@ -274,7 +274,7 @@
               <button
                 v-if="hasTagManagerTags(resource)"
                 class="btn-action btn-action-danger"
-                title="Remove tag-manager tags"
+                title="Remove BlueArch-managed tags"
                 @click="removeResourceTags(resource)"
               >
                 <i class="pi pi-times"></i>

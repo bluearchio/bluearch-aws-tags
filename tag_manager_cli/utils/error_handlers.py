@@ -69,7 +69,7 @@ def handle_permission_error(error: ClientError, context: Optional[str] = None):
 
     safe_print("\nTo fix this issue:", "white")
     safe_print("\n1. Run the permission validator to see all missing permissions:", "cyan")
-    safe_print("   tag-manager setup validate", "bold cyan")
+    safe_print("   bluearch-aws-tags setup validate", "bold cyan")
 
     safe_print("\n2. The validator will:", "white")
     safe_print("   - Check your current AWS credentials", "dim")
@@ -141,10 +141,10 @@ def require_database(func: Callable) -> Callable:
             if isinstance(db_status, dict) and db_status.get("status") in {"error", "unavailable"}:
                 raise RuntimeError(db_status.get("message") or db_status.get("status"))
         except Exception as e:
-            safe_print("ERROR bluearch-core database is not initialized or accessible!", "red")
+            safe_print("ERROR bluearch-aws-core database is not initialized or accessible!", "red")
             safe_print(f"\nDetails: {str(e)}", "dim")
             safe_print("\nStart the shared runtime first:", "yellow")
-            safe_print("  bluearch-core start --daemon", "cyan")
+            safe_print("  bluearch-aws-core start --daemon", "cyan")
             raise typer.Exit(code=1)
 
         return func(*args, **kwargs)
@@ -171,17 +171,17 @@ def require_discovery(func: Callable) -> Callable:
             summary = request_core("GET", "/api/v1/resources/summary", timeout=5.0)
             resource_count = int(summary.get("total") or 0)
             if resource_count == 0:
-                safe_print("WARN No resources found in bluearch-core inventory!", "yellow")
+                safe_print("WARN No resources found in bluearch-aws-core inventory!", "yellow")
                 safe_print("\nIt looks like you haven't discovered AWS resources yet.", "yellow")
                 safe_print("Run resource discovery first:", "white")
-                safe_print("  bluearch-core scan", "cyan")
+                safe_print("  bluearch-aws-tags discover all", "cyan")
                 safe_print("\nThis will scan your AWS accounts and populate the shared inventory.", "dim")
                 raise typer.Exit(code=1)
         except typer.Exit:
             # Re-raise typer.Exit to propagate it
             raise
         except Exception as e:
-            safe_print(f"ERROR Could not check bluearch-core inventory: {str(e)}", "red")
+            safe_print(f"ERROR Could not check bluearch-aws-core inventory: {str(e)}", "red")
             raise typer.Exit(code=1)
 
         return func(*args, **kwargs)
@@ -288,13 +288,13 @@ def handle_database_errors(func: Callable) -> Callable:
         except DatabaseEmptyError as e:
             safe_print(f"WARN {str(e)}", "yellow")
             safe_print("\nRun resource discovery to populate the database:", "white")
-            safe_print("  tag-manager discover all", "cyan")
+            safe_print("  bluearch-aws-tags discover all", "cyan")
             raise typer.Exit(code=1)
 
         except DatabaseNotInitializedError as e:
             safe_print(f"ERROR {str(e)}", "red")
             safe_print("\nInitialize the database:", "yellow")
-            safe_print("  tag-manager database init", "cyan")
+            safe_print("  bluearch-aws-tags setup database", "cyan")
             raise typer.Exit(code=1)
 
         except typer.Exit:
@@ -311,7 +311,7 @@ def handle_database_errors(func: Callable) -> Callable:
             if 'no such table' in error_str or 'does not exist' in error_str:
                 safe_print("ERROR Database tables not found!", "red")
                 safe_print("\nRun database migrations:", "yellow")
-                safe_print("  tag-manager database migrate", "cyan")
+                safe_print("  bluearch-aws-tags setup database", "cyan")
             elif 'locked' in error_str:
                 safe_print("ERROR Database is locked!", "red")
                 safe_print("\nAnother process may be using the database.", "yellow")
@@ -319,7 +319,7 @@ def handle_database_errors(func: Callable) -> Callable:
             else:
                 safe_print(f"ERROR Database operation failed: {str(e)}", "red")
                 safe_print("\nCheck database status:", "yellow")
-                safe_print("  tag-manager database status", "cyan")
+                safe_print("  bluearch-aws-tags setup validate", "cyan")
 
             raise typer.Exit(code=1)
 
@@ -355,7 +355,7 @@ def handle_validation_errors(func: Callable) -> Callable:
             if e.setting:
                 safe_print(f"\nSetting: {e.setting}", "dim")
             safe_print("\nCheck your configuration:", "yellow")
-            safe_print("  tag-manager system validate", "cyan")
+            safe_print("  bluearch-aws-tags setup validate", "cyan")
             raise typer.Exit(code=1)
 
     return wrapper

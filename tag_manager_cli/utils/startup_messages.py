@@ -18,6 +18,9 @@ class StartupMessageManager:
 
     def _init_session(self):
         """Initialize session tracking using file-based storage."""
+        if os.environ.get("TAG_MANAGER_SUPPRESS_STARTUP_STATE") == "1":
+            self.show_messages = False
+            return
         try:
             # Generate session key based on user and terminal
             user = os.environ.get('USER', 'unknown')

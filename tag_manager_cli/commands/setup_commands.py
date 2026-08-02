@@ -6,6 +6,7 @@ Handles AWS profile selection and guides through setup.
 """
 
 import os
+import shutil
 import sys
 import subprocess
 import json
@@ -23,16 +24,20 @@ from ..utils.aws_auth import aws_auth
 from ..utils.command_suggestions import show_suggestions
 from ..utils.env_config import settings
 from ..utils.core_client import CoreRuntimeError, request_core
+from ..utils.public_executables import (
+    PUBLIC_TAGS_FORMULA,
+    PUBLIC_TAGS_EXECUTABLE,
+    probe_public_tags_version,
+    public_tags_version_label,
+    resolve_homebrew_executable,
+    resolve_public_tags_executable,
+)
 
 console = Console()
 setup_app = typer.Typer(
     help="Setup and configuration wizard",
     no_args_is_help=False
 )
-
-# Constants
-CLI_MODULE = "tag_manager_cli.main"
-
 
 def print_safe(message: str):
     """Print message safely without emojis for PyInstaller compatibility."""
@@ -215,8 +220,8 @@ def _submit_core_setup_job(
     )
     job_id = job.get("job_id") or job.get("id")
     if not job_id:
-        raise RuntimeError(f"bluearch-core did not return a job id for {action}")
-    print_safe(f"[cyan]{action} started in bluearch-core (job {job_id})[/cyan]")
+        raise RuntimeError(f"bluearch-aws-core did not return a job id for {action}")
+    print_safe(f"[cyan]{action} started in bluearch-aws-core (job {job_id})[/cyan]")
     return _wait_for_core_setup_job(str(job_id), action, timeout_seconds=timeout_seconds)
 
 
@@ -240,7 +245,7 @@ def _wait_for_core_setup_job(job_id: str, action: str, *, timeout_seconds: int =
         if job.get("status") == "failed":
             raise RuntimeError(job.get("error") or message or f"{action} failed")
         time.sleep(3)
-    raise RuntimeError(f"Timed out waiting for bluearch-core job {job_id}")
+    raise RuntimeError(f"Timed out waiting for bluearch-aws-core job {job_id}")
 
 
 def _print_core_stackset_status(status_payload: dict) -> None:
@@ -410,8 +415,8 @@ def setup_wizard(
         "[bold green]Setup Complete![/bold green]\n\n"
         "The AWS Tag Manager CLI is ready to use.\n\n"
         "Next steps:\n"
-        "1. Run [cyan]tag-manager lifecycle wizard[/cyan] for guided workflow\n"
-        "2. Or run [cyan]tag-manager lifecycle scan[/cyan] to scan resources",
+        "1. Run [cyan]bluearch-aws-tags lifecycle wizard[/cyan] for guided workflow\n"
+        "2. Or run [cyan]bluearch-aws-tags lifecycle scan[/cyan] to scan resources",
         border_style="green"
     ))
 
@@ -432,7 +437,7 @@ def validate_command(
     Use --iam to display the full JSON IAM policies needed to fix missing permissions.
     """
     if not iam:
-        print_safe("[blue][SEARCH] Validating shared setup through bluearch-core[/blue]\n")
+        print_safe("[blue][SEARCH] Validating shared setup through bluearch-aws-core[/blue]\n")
         try:
             _validate_shared_setup_via_core()
         except CoreRuntimeError as exc:
@@ -575,7 +580,7 @@ def validate_command(
                         validation_results.append((
                             "Assume Role Bootstrap",
                             True,
-                            "Can deploy IAM role via: tag-manager setup assume-role"
+                            "Can deploy IAM role via: bluearch-aws-tags setup assume-role"
                         ))
                     else:
                         bootstrap_summary = f"Missing {len(bootstrap_missing)} permissions"
@@ -632,7 +637,7 @@ def validate_command(
 
     if all_passed:
         print_success("\nOK All validations passed! System is ready to use.")
-        print_safe("Start with: [cyan]tag-manager lifecycle wizard[/cyan] or [cyan]tag-manager lifecycle scan[/cyan]")
+        print_safe("Start with: [cyan]bluearch-aws-tags lifecycle wizard[/cyan] or [cyan]bluearch-aws-tags lifecycle scan[/cyan]")
     else:
         print_error("\nERROR Some validations failed. Please address the issues above.")
 
@@ -656,12 +661,12 @@ def validate_command(
                 "deploy the role and let the CLI assume it:"
             )
             print_safe(
-                "\n  [cyan]tag-manager setup assume-role[/cyan]\n"
+                "\n  [cyan]bluearch-aws-tags setup assume-role[/cyan]\n"
             )
         elif iam_failed and not iam:
             print_safe("\n[bold yellow]Run [cyan]setup validate --iam[/cyan] to see the full IAM policies needed to fix permissions.[/bold yellow]")
 
-        print_safe("For help: [cyan]tag-manager setup --help[/cyan] or [cyan]tag-manager setup wizard[/cyan]")
+        print_safe("For help: [cyan]bluearch-aws-tags setup --help[/cyan] or [cyan]bluearch-aws-tags setup wizard[/cyan]")
 
 
 @setup_app.command("aws")
@@ -935,7 +940,7 @@ def setup_aws_profile() -> Optional[str]:
 
 def initialize_database():
     """Initialize the bluearch-core database."""
-    print_safe("Initializing bluearch-core database...")
+    print_safe("Initializing bluearch-aws-core database...")
     try:
         status = request_core("GET", "/api/v1/core/db/status", timeout=10.0)
         request_core("POST", "/api/v1/core/db/migrate", timeout=30.0)
@@ -959,7 +964,7 @@ def run_initial_discovery():
         if resource_count == 0:
             print_safe("No resources in core inventory yet.")
             print_safe("\nTo discover AWS resources, run:")
-            print_safe("  [cyan]tag-manager lifecycle scan --discover[/cyan]\n")
+            print_safe("  [cyan]bluearch-aws-tags discover all[/cyan]\n")
             discovery_result = type('obj', (object,), {'returncode': 0})()
             return
 
@@ -970,31 +975,46 @@ def run_initial_discovery():
             print_safe("\nPolicies define WHICH resources to manage (by service, tags, age).")
             print_safe("Resources matching policies can then have TTL applied.\n")
             print_safe("Create your first policy:")
-            print_safe("  [cyan]tag-manager lifecycle policies create[/cyan]\n")
+            print_safe("  [cyan]bluearch-aws-tags lifecycle policies create[/cyan]\n")
             print_safe("Or use the guided workflow:")
-            print_safe("  [cyan]tag-manager lifecycle wizard[/cyan]\n")
+            print_safe("  [cyan]bluearch-aws-tags lifecycle wizard[/cyan]\n")
             discovery_result = type('obj', (object,), {'returncode': 0})()
         else:
             print_safe(f"Found {policy_count} active lifecycle policies.")
             print_safe("Showing resources matching policies...\n")
             # Show resources matching policies (default scan behavior)
-            discovery_result = subprocess.run(
-                ["python", "-m", CLI_MODULE, "lifecycle", "scan"],
-                capture_output=False
+            executable = next(
+                (
+                    resolved
+                    for candidate in (
+                        sys.executable,
+                        shutil.which(PUBLIC_TAGS_EXECUTABLE),
+                    )
+                    if (resolved := resolve_public_tags_executable(candidate))
+                ),
+                None,
             )
+            if executable is None:
+                print_warning("A safe bluearch-aws-tags executable was not found.")
+                discovery_result = type('obj', (object,), {'returncode': 1})()
+            else:
+                discovery_result = subprocess.run(
+                    [executable, "lifecycle", "scan"],
+                    capture_output=False,
+                )
 
         if discovery_result.returncode == 0:
             print_success("\nResource discovery completed successfully")
         else:
             print_warning("\nResource discovery encountered issues")
-            print_safe("You can run discovery manually later with: tag-manager lifecycle scan --discover")
+            print_safe("You can run discovery manually later with: bluearch-aws-tags discover all")
 
     except subprocess.TimeoutExpired:
         print_warning("\nResource discovery timed out")
-        print_safe("You can run discovery manually later with: tag-manager lifecycle scan --discover")
+        print_safe("You can run discovery manually later with: bluearch-aws-tags discover all")
     except Exception as e:
         print_warning(f"\nDiscovery warning: {e}")
-        print_safe("You can run discovery manually later with: tag-manager lifecycle scan --discover")
+        print_safe("You can run discovery manually later with: bluearch-aws-tags discover all")
 
 
 def validate_setup_simple():
@@ -1042,7 +1062,7 @@ def doctor():
     Diagnose installation issues and binary conflicts.
 
     Checks for:
-    - Multiple tag-manager binaries (curl vs Homebrew installations)
+    - Multiple public Tags binaries (curl vs Homebrew installations)
     - PATH order issues that may cause version conflicts
     - AWS credentials configuration
     - Data directory accessibility
@@ -1061,37 +1081,45 @@ def doctor():
     console.print("[bold]Checking binary installations...[/bold]\n")
 
     binary_locations = {
-        "curl": Path.home() / ".local" / "bin" / "tag-manager",
-        "homebrew_arm": Path("/opt/homebrew/bin/tag-manager"),
-        "homebrew_intel": Path("/usr/local/bin/tag-manager"),
-        "system": Path("/usr/bin/tag-manager"),
+        "curl": Path.home() / ".local" / "bin" / "bluearch-aws-tags",
+        "homebrew_arm": Path("/opt/homebrew/bin/bluearch-aws-tags"),
+        "homebrew_intel": Path("/usr/local/bin/bluearch-aws-tags"),
+        "system": Path("/usr/bin/bluearch-aws-tags"),
     }
 
     found_binaries = {}
     for name, path in binary_locations.items():
-        if path.exists():
+        probe = probe_public_tags_version(os.fspath(path))
+        if probe is not None:
+            canonical_path, result = probe
             # Get version
-            version = "unknown"
-            try:
-                result = subprocess.run(
-                    [str(path), "--version"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10
-                )
-                if result.returncode == 0:
-                    # Extract version from output like "AWS Tag Manager CLI v0.3.4 (production)"
-                    for line in result.stdout.split("\n"):
-                        if "Tag Manager CLI" in line:
-                            version = line.strip()
-                            break
-            except Exception:
-                pass
-            found_binaries[name] = {"path": path, "version": version}
+            version = (
+                public_tags_version_label(result.stdout)
+                if result.returncode == 0
+                else None
+            ) or "unknown"
+            found_binaries[name] = {
+                "path": path,
+                "canonical_path": canonical_path,
+                "version": version,
+            }
+
+    legacy_locations = (
+        Path.home() / ".local" / "bin" / "tag-manager",
+        Path("/opt/homebrew/bin/tag-manager"),
+        Path("/usr/local/bin/tag-manager"),
+        Path("/usr/bin/tag-manager"),
+    )
+    legacy_binaries = [path for path in legacy_locations if path.exists()]
+    hidden_legacy_targets = [
+        path
+        for path in binary_locations.values()
+        if path.exists() and resolve_public_tags_executable(os.fspath(path)) is None
+    ]
 
     # Display found binaries
     if not found_binaries:
-        print_warning("No tag-manager binary found!")
+        print_warning("No bluearch-aws-tags binary found!")
         issues_found += 1
     else:
         for name, info in found_binaries.items():
@@ -1103,6 +1131,14 @@ def doctor():
             }.get(name, name)
             console.print(f"  [cyan]{install_type}:[/cyan] {info['path']}")
             console.print(f"    Version: {info['version']}")
+    if legacy_binaries:
+        print_warning("Legacy tag-manager launchers detected; they are not used by BlueArch AWS Tags.")
+        for path in legacy_binaries:
+            console.print(f"  [dim]Migration review:[/dim] {path}")
+    if hidden_legacy_targets:
+        print_warning("Public launcher symlinks with a non-public target are not used.")
+        for path in hidden_legacy_targets:
+            console.print(f"  [dim]Migration review:[/dim] {path}")
 
     # Check for conflicts
     if len(found_binaries) > 1:
@@ -1111,14 +1147,14 @@ def doctor():
         issues_found += 1
 
         # Check PATH order
-        active_binary = shutil.which("tag-manager")
+        active_binary = shutil.which("bluearch-aws-tags")
         if active_binary:
             console.print(f"\n  [bold]Active binary:[/bold] {active_binary}")
 
             # Determine which one is active
-            active_path = Path(active_binary).resolve()
+            active_path = resolve_public_tags_executable(active_binary)
             for name, info in found_binaries.items():
-                if info["path"].resolve() == active_path:
+                if info["canonical_path"] == active_path:
                     if name == "curl" and ("homebrew_arm" in found_binaries or "homebrew_intel" in found_binaries):
                         console.print(f"\n  [yellow]Issue: Curl binary is shadowing Homebrew installation[/yellow]")
                         console.print(f"  [dim]The curl-installed binary comes before Homebrew in your PATH.[/dim]")
@@ -1128,24 +1164,17 @@ def doctor():
 
     # 2. Check active binary in PATH
     console.print("\n[bold]Checking PATH...[/bold]\n")
-    active_binary = shutil.which("tag-manager")
-    if active_binary:
-        print_success(f"tag-manager found in PATH: {active_binary}")
+    active_binary = shutil.which("bluearch-aws-tags")
+    active_probe = probe_public_tags_version(active_binary)
+    if active_probe is not None:
+        _, result = active_probe
+        print_success(f"bluearch-aws-tags found in PATH: {active_binary}")
 
         # Get active version
-        try:
-            result = subprocess.run(
-                ["tag-manager", "--version"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                console.print(f"  Active version: {result.stdout.split(chr(10))[0].strip()}")
-        except Exception:
-            pass
+        if result.returncode == 0:
+            console.print(f"  Active version: {result.stdout.split(chr(10))[0].strip()}")
     else:
-        print_warning("tag-manager not found in PATH")
+        print_warning("bluearch-aws-tags not found in PATH")
         issues_found += 1
         console.print("  [dim]You may need to add the installation directory to your PATH[/dim]")
 
@@ -1208,8 +1237,11 @@ def doctor():
     # 5. Check Homebrew installation status
     console.print("\n[bold]Checking Homebrew installation...[/bold]\n")
     try:
+        brew = resolve_homebrew_executable()
+        if brew is None:
+            raise FileNotFoundError("canonical brew was not found")
         result = subprocess.run(
-            ["brew", "list", "tag-manager"],
+            [brew, "list", PUBLIC_TAGS_FORMULA],
             capture_output=True,
             text=True,
             timeout=10
@@ -1218,7 +1250,7 @@ def doctor():
             print_success("Installed via Homebrew")
             # Get Homebrew version info
             version_result = subprocess.run(
-                ["brew", "info", "tag-manager", "--json=v2"],
+                [brew, "info", PUBLIC_TAGS_FORMULA, "--json=v2"],
                 capture_output=True,
                 text=True,
                 timeout=10
@@ -1261,7 +1293,7 @@ def _remove_multi_account(force: bool = False) -> None:
             timeout_seconds=1800,
         )
     except Exception as exc:
-        print_error(f"Failed to remove cross-account infrastructure through bluearch-core: {exc}")
+        print_error(f"Failed to remove cross-account infrastructure through bluearch-aws-core: {exc}")
         raise typer.Exit(1)
     print_success(result.get("message") or "Cross-account infrastructure removed")
 
@@ -1300,7 +1332,7 @@ def multi_account_setup(
     try:
         validation = request_core("GET", "/api/v1/accounts/validate", timeout=15.0)
     except Exception as exc:
-        print_error(f"bluearch-core account validation unavailable: {exc}")
+        print_error(f"bluearch-aws-core account validation unavailable: {exc}")
         raise typer.Exit(1)
 
     current_account = validation.get("current_account_id") or "-"
@@ -1315,7 +1347,7 @@ def multi_account_setup(
         print_error(f"Prerequisites check failed: {guidance}")
         raise typer.Exit(1)
 
-    print_success("Prerequisites validated by bluearch-core")
+    print_success("Prerequisites validated by bluearch-aws-core")
 
     if validate_only:
         console.print("\n[dim]Validation complete. Use without --validate-only to deploy.[/dim]")
@@ -1368,7 +1400,7 @@ def multi_account_setup(
                 timeout_seconds=1800,
             )
     except Exception as exc:
-        print_error(f"Deployment failed through bluearch-core: {exc}")
+        print_error(f"Deployment failed through bluearch-aws-core: {exc}")
         raise typer.Exit(1)
 
     deployed_accounts = result.get("deployed_accounts") or []
@@ -1412,25 +1444,25 @@ def setup_assume_role(
 
     Examples:
         # Check if role exists and configure it
-        tag-manager setup assume-role
+        bluearch-aws-tags setup assume-role
 
         # Deploy the CloudFormation stack directly from CLI
-        tag-manager setup assume-role
+        bluearch-aws-tags setup assume-role
 
         # Show the CloudFormation quick-create URL
-        tag-manager setup assume-role --show-url
+        bluearch-aws-tags setup assume-role --show-url
 
         # Configure with custom role name
-        tag-manager setup assume-role --role-name MyRole
+        bluearch-aws-tags setup assume-role --role-name MyRole
 
         # Disable assume role (use direct credentials)
-        tag-manager setup assume-role --disable
+        bluearch-aws-tags setup assume-role --disable
 
         # Disable and delete the CloudFormation stack
-        tag-manager setup assume-role --disable --delete-stack
+        bluearch-aws-tags setup assume-role --disable --delete-stack
 
         # Check current configuration
-        tag-manager setup assume-role --status
+        bluearch-aws-tags setup assume-role --status
     """
     from ..utils.cloudformation_urls import (
         get_quick_create_url,
@@ -1578,8 +1610,8 @@ def setup_assume_role(
         print_safe("[bold]All CLI operations will now use temporary credentials from:[/bold]")
         console.print(f"  Role: [cyan]{role_arn}[/cyan]")
         print_safe("")
-        print_safe("To disable: [dim]tag-manager setup assume-role --disable[/dim]")
-        print_safe("To check status: [dim]tag-manager setup assume-role --status[/dim]")
+        print_safe("To disable: [dim]bluearch-aws-tags setup assume-role --disable[/dim]")
+        print_safe("To check status: [dim]bluearch-aws-tags setup assume-role --status[/dim]")
 
     except Exception as e:
         print_error(f"Failed to save configuration: {e}")
@@ -1597,7 +1629,7 @@ def _show_assume_role_status(account_id: str):
         if not configs:
             print_safe("No assume role configurations found.")
             print_safe("")
-            print_safe("To configure: [dim]tag-manager setup assume-role[/dim]")
+            print_safe("To configure: [dim]bluearch-aws-tags setup assume-role[/dim]")
             return
 
         # Create a table
@@ -1732,7 +1764,7 @@ def _disable_assume_role(account_id: str, force: bool = False, delete_stack: boo
         print_success(result.get("message") or "Assume role disabled.")
         print_safe("CLI will now use direct credentials.")
     except Exception as e:
-        print_error(f"Failed to disable through bluearch-core: {e}")
+        print_error(f"Failed to disable through bluearch-aws-core: {e}")
         raise typer.Exit(1)
 
 
@@ -1813,7 +1845,7 @@ def _deploy_assume_role_stack(
             print_safe("[dim]External ID retrieved from Secrets Manager[/dim]")
 
     print_safe("")
-    print_safe("Submitting deployment to bluearch-core")
+    print_safe("Submitting deployment to bluearch-aws-core")
     print_safe(f"  Trust Mode: {trusted_mode}")
     if trusted_mode == "CurrentUser":
         console.print(f"  [dim]Trusted Principal: {current_user_arn}[/dim]")
@@ -1835,10 +1867,10 @@ def _deploy_assume_role_stack(
         )
         if result.get("role_arn"):
             console.print(f"  Role ARN: [cyan]{result['role_arn']}[/cyan]")
-        print_success("Assume-role deployed and configured by bluearch-core.")
+        print_success("Assume-role deployed and configured by bluearch-aws-core.")
 
     except Exception as e:
-        print_error(f"Failed to deploy assume-role through bluearch-core: {e}")
+        print_error(f"Failed to deploy assume-role through bluearch-aws-core: {e}")
         raise typer.Exit(1)
 
 
@@ -1855,7 +1887,7 @@ def _delete_assume_role_stack(stack_name: str, force: bool = False):
         )
         print_success(result.get("message") or "CloudFormation stack deleted successfully!")
     except Exception as e:
-        print_error(f"Failed to delete stack through bluearch-core: {e}")
+        print_error(f"Failed to delete stack through bluearch-aws-core: {e}")
         raise typer.Exit(1)
 
 

@@ -7,11 +7,13 @@ from rich.panel import Panel
 from rich.text import Text
 from typing import List, Tuple, Optional, Dict, Any
 
-# Ensure console can handle UTF-8 characters (like your working BlueArch CLI)
-try:
-    sys.stdout.reconfigure(encoding='utf-8')
-except (AttributeError, Exception):
-    pass
+# Reconfigure only the process-owned stream. Test runners and embedding hosts
+# may supply managed capture streams whose lifecycle is corrupted by reconfigure.
+if sys.stdout is sys.__stdout__:
+    try:
+        sys.stdout.reconfigure(encoding='utf-8')
+    except (AttributeError, Exception):
+        pass
 
 # Configure console exactly like your working BlueArch CLI
 console = Console()

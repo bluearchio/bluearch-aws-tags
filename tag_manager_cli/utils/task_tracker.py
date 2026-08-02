@@ -8,6 +8,9 @@ Replaces Celery background tasks with a prompt-based system that:
 
 import os
 import json
+import shlex
+import shutil
+import subprocess
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -20,6 +23,27 @@ from rich.prompt import Prompt, Confirm
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
 console = Console()
+PUBLIC_TAGS_EXECUTABLE = "bluearch-aws-tags"
+LEGACY_TAGS_EXECUTABLES = {"tag-manager"}
+
+
+def _resolve_public_tags_executable() -> Optional[str]:
+    """Resolve the public launcher without accepting a legacy symlink target."""
+    candidate = shutil.which(PUBLIC_TAGS_EXECUTABLE)
+    if not candidate:
+        return None
+    path = Path(candidate)
+    if path.name in LEGACY_TAGS_EXECUTABLES or path.name != PUBLIC_TAGS_EXECUTABLE:
+        return None
+    if not path.is_file() or not os.access(path, os.X_OK):
+        return None
+    try:
+        target = path.resolve(strict=True)
+        if target.name != PUBLIC_TAGS_EXECUTABLE:
+            return None
+    except OSError:
+        return None
+    return os.fspath(target)
 
 
 class TaskPriority(Enum):
@@ -95,7 +119,7 @@ class TaskTracker:
             description="Scan AWS resources to update local inventory",
             staleness_hours=24,  # Daily
             priority=TaskPriority.HIGH,
-            command="discover"
+            command="discover all"
         )
 
         # TODO: CloudTrail processing - Disabled temporarily, will be re-enabled in future
@@ -125,10 +149,11 @@ class TaskTracker:
         tasks["database_maintenance"] = TrackedTask(
             name="database_maintenance",
             display_name="Database Maintenance",
-            description="Optimize database performance and clean old records",
+            description="Core-owned database maintenance",
             staleness_hours=168,  # Weekly
             priority=TaskPriority.LOW,
-            command="database optimize"
+            command=None,
+            function=None,
         )
 
         # Tag compliance check (user runs this manually)
@@ -138,7 +163,7 @@ class TaskTracker:
             description="Check resources for required tags",
             staleness_hours=168,  # Weekly (users run manually)
             priority=TaskPriority.LOW,
-            command=None,  # Users run 'tags scan' manually when needed
+            command=None,  # Use `bluearch-aws-tags policy check-compliance` manually.
             function=None
         )
 
@@ -239,8 +264,8 @@ class TaskTracker:
     def prompt_for_stale_tasks(self, no_prompt: bool = False) -> List[str]:
         """Check for stale tasks without showing warnings.
 
-        Warnings are disabled to avoid annoying users. Tasks can still be
-        checked manually using 'tag-manager tasks list' command.
+        Warnings are disabled to avoid interrupting normal commands. Tasks can
+        still run through the internal maintenance flow.
 
         Args:
             no_prompt: If True, skip showing warning (for CI/automation)
@@ -249,7 +274,7 @@ class TaskTracker:
             Empty list (warnings disabled)
         """
         # Task maintenance warnings are disabled
-        # Users can check tasks manually with: tag-manager tasks list
+        # Maintenance remains available through the internal task flow.
         return []
 
     def run_task(self, task_name: str, progress: Optional[Progress] = None) -> bool:
@@ -279,18 +304,21 @@ class TaskTracker:
                 success = task.function()
             elif task.command:
                 # Execute CLI command with timeout
-                import subprocess
                 try:
-                    result = subprocess.run(
-                        f"tag-manager {task.command}",
-                        shell=True,
-                        capture_output=True,
-                        text=True,
-                        timeout=60  # 60 second timeout per task
-                    )
-                    success = result.returncode == 0
-                    if not success:
-                        console.print(f"[red]Error: {result.stderr}[/red]")
+                    executable = _resolve_public_tags_executable()
+                    if not executable:
+                        console.print("[red]Error: bluearch-aws-tags executable not found or unsafe[/red]")
+                        success = False
+                    else:
+                        result = subprocess.run(
+                            [executable, *shlex.split(task.command)],
+                            capture_output=True,
+                            text=True,
+                            timeout=60,
+                        )
+                        success = result.returncode == 0
+                        if not success:
+                            console.print(f"[red]Error: {result.stderr}[/red]")
                 except subprocess.TimeoutExpired:
                     console.print(f"[red]Task timed out after 60 seconds[/red]")
                     success = False

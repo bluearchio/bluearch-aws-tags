@@ -12,7 +12,7 @@ setup:
 	cd frontend && npm ci
 
 backend-dev:
-	PYTHONPATH=. $(PY) -m tag_manager_cli.main web start --host 127.0.0.1 --port 8096
+	BLUEARCH_CORE_MANAGED_WEB_START=1 PYTHONPATH=. $(PY) -m tag_manager_cli.main web start --host 127.0.0.1 --port 8096
 
 frontend-dev:
 	cd frontend && npm run dev

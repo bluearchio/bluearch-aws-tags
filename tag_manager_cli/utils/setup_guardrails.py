@@ -136,12 +136,12 @@ class SetupGuardrails:
 
         # Check StackSet
         if not SetupGuardrails.check_stackset_exists():
-            return False, "CloudFormation StackSet not found. Run 'tag-manager accounts setup' first."
+            return False, "CloudFormation StackSet not found. Run 'bluearch-aws-tags setup multi-account' first."
 
         # Check if any accounts have role access
         has_access, success_count, total_tested = SetupGuardrails.check_any_role_access()
         if not has_access:
-            return False, f"No accounts have role access (tested {total_tested}). Run 'tag-manager accounts setup'."
+            return False, f"No accounts have role access (tested {total_tested}). Run 'bluearch-aws-tags setup multi-account --complete'."
 
         return True, None
 
@@ -152,16 +152,16 @@ class SetupGuardrails:
             "[bold yellow]Cross-Account Setup Required[/bold yellow]\n\n"
             "Before you can enable/disable accounts, you need to:\n\n"
             "1. [cyan]Deploy infrastructure:[/cyan]\n"
-            "   [dim]tag-manager accounts setup[/dim]\n"
+            "   [dim]bluearch-aws-tags setup multi-account[/dim]\n"
             "   This deploys the BlueArchRole to your accounts\n\n"
             "2. [cyan]Verify access:[/cyan]\n"
-            "   [dim]tag-manager accounts test-access[/dim]\n"
+            "   [dim]bluearch-aws-tags setup multi-account --validate-only[/dim]\n"
             "   This confirms the roles are working\n\n"
             "3. [cyan]Enable accounts:[/cyan]\n"
-            "   [dim]tag-manager accounts enable --all[/dim]\n"
+            "   [dim]bluearch-aws-tags setup multi-account --complete[/dim]\n"
             "   This marks accounts for scanning\n\n"
             "[bold]Quick Start:[/bold]\n"
-            "[green]tag-manager accounts setup --all[/green]",
+            "[green]bluearch-aws-tags setup multi-account --complete[/green]",
             border_style="yellow",
             padding=(1, 2)
         )
@@ -235,7 +235,7 @@ class SetupGuardrails:
                         sys.exit(e.code)
                 except Exception as e:
                     console.print(f"\n[red]Failed to run setup: {e}[/red]")
-                    console.print("\n[yellow]Run manually:[/yellow] tag-manager accounts setup")
+                    console.print("\n[yellow]Run manually:[/yellow] bluearch-aws-tags setup multi-account")
                     sys.exit(1)
             else:
                 sys.exit(1)

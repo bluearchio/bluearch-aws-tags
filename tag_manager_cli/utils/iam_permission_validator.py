@@ -71,7 +71,7 @@ class IAMPermissionValidator:
             'lambda:ListFunctions',
             'rds:DescribeDBInstances'
         ],
-        'tags scan': [
+        'lifecycle scan': [
             'tag:GetResources',
             'ec2:DescribeInstances',
             'ec2:DescribeVolumes',
@@ -80,13 +80,13 @@ class IAMPermissionValidator:
             'lambda:ListFunctions',
             'lambda:ListTags'
         ],
-        'tags apply': [
+        'lifecycle set-ttl': [
             'tag:TagResources',
             's3:PutBucketTagging',
             's3:PutObjectTagging',
             'lambda:TagResource'
         ],
-        'tags remove': [
+        'resource tag removal': [
             'lambda:UntagResource'
         ],
         'cost report': [

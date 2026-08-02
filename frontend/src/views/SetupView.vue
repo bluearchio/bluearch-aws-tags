@@ -473,7 +473,7 @@
               <span class="step-num">1</span>
               <div class="step-content">
                 <strong>Deploy Cross-Account Role (Single Account)</strong>
-                <code>tag-manager setup assume-role --deploy</code>
+                <code>bluearch-aws-tags setup assume-role --deploy</code>
                 <p>Creates an IAM role in your account with the required permissions.</p>
               </div>
             </div>
@@ -481,7 +481,7 @@
               <span class="step-num">2</span>
               <div class="step-content">
                 <strong>Deploy Multi-Account StackSets (AWS Organizations)</strong>
-                <code>tag-manager setup multi-account</code>
+                <code>bluearch-aws-tags setup multi-account</code>
                 <p>Deploys IAM roles across all member accounts using StackSets.</p>
               </div>
             </div>
@@ -489,7 +489,7 @@
               <span class="step-num">3</span>
               <div class="step-content">
                 <strong>Verify Configuration</strong>
-                <code>tag-manager setup assume-role --status</code>
+                <code>bluearch-aws-tags setup assume-role --status</code>
                 <p>Check the status of configured roles and test cross-account access.</p>
               </div>
             </div>
@@ -561,22 +561,22 @@
       <div class="cli-commands">
         <div class="cli-group">
           <h4>Initial Setup</h4>
-          <div class="cli-cmd"><code>tag-manager setup wizard</code><span>Interactive setup wizard</span></div>
-          <div class="cli-cmd"><code>tag-manager setup validate</code><span>Validate configuration</span></div>
-          <div class="cli-cmd"><code>tag-manager setup validate --iam</code><span>Show required IAM permissions</span></div>
-          <div class="cli-cmd"><code>tag-manager setup doctor</code><span>Diagnose installation issues</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup wizard</code><span>Interactive setup wizard</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup validate</code><span>Validate configuration</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup validate --iam</code><span>Show required IAM permissions</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup doctor</code><span>Diagnose installation issues</span></div>
         </div>
         <div class="cli-group">
           <h4>AWS Configuration</h4>
-          <div class="cli-cmd"><code>tag-manager setup aws</code><span>Configure AWS profile</span></div>
-          <div class="cli-cmd"><code>tag-manager setup database</code><span>Initialize database</span></div>
-          <div class="cli-cmd"><code>tag-manager setup database --force</code><span>Reset and reinitialize database</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup aws</code><span>Configure AWS profile</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup database</code><span>Initialize database</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup database --force</code><span>Reset and reinitialize database</span></div>
         </div>
         <div class="cli-group">
           <h4>Multi-Account</h4>
-          <div class="cli-cmd"><code>tag-manager setup multi-account</code><span>Deploy cross-account StackSets</span></div>
-          <div class="cli-cmd"><code>tag-manager setup assume-role --deploy</code><span>Configure assume-role auth</span></div>
-          <div class="cli-cmd"><code>tag-manager setup assume-role --status</code><span>Check role configuration</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup multi-account</code><span>Deploy cross-account StackSets</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup assume-role --deploy</code><span>Configure assume-role auth</span></div>
+          <div class="cli-cmd"><code>bluearch-aws-tags setup assume-role --status</code><span>Check role configuration</span></div>
         </div>
       </div>
     </div>

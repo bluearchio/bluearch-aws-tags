@@ -1,4 +1,4 @@
-"""CloudWatch alarm management commands for tag-manager CLI."""
+"""CloudWatch alarm management commands for bluearch-aws-tags CLI."""
 
 import typer
 from typing import Optional, List
@@ -163,7 +163,7 @@ def show_alarms_help():
 
     console.print("[bold green]ALARM OPERATIONS[/bold green] (start here):")
     console.print("- [cyan]create[/cyan]        - Create alarm (AI-powered wizard)")
-    console.print("- [cyan]list[/cyan]          - List alarms managed by tag-manager")
+    console.print("- [cyan]list[/cyan]          - List alarms managed by BlueArch AWS Tags")
     console.print("- [cyan]delete[/cyan]        - Delete an alarm (wizard)")
     console.print("- [cyan]sync[/cyan]          - Sync local state with AWS\n")
 
@@ -200,7 +200,7 @@ def alarms_main(
     """
     CloudWatch alarm management - Monitor your AWS resources with ease.
 
-    Create, manage, and track CloudWatch alarms with tag-manager integration.
+    Create, manage, and track CloudWatch alarms with bluearch-aws-tags integration.
     All alarms are tagged for tracking and support email notifications.
     """
     if help or ctx.invoked_subcommand is None:
@@ -219,7 +219,7 @@ def list_alarms(
     all_alarms: bool = typer.Option(False, "--all", "-a", help="Show all alarms, not just managed ones"),
     limit: int = typer.Option(50, "--limit", "-l", help="Maximum alarms to show"),
 ):
-    """List CloudWatch alarms managed by tag-manager."""
+    """List CloudWatch alarms managed by BlueArch AWS Tags."""
     svc = _get_service()
 
     # Get region for display

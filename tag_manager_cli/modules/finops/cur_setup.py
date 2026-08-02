@@ -167,7 +167,9 @@ class CURSetup:
                 console.print(f"  Report: {config.report_name}")
                 console.print(f"  S3: s3://{config.s3_bucket}/{config.s3_prefix}")
                 console.print(f"\n[dim]CUR data takes ~24 hours to appear after initial setup.[/dim]")
-                console.print(f"[dim]Run 'cost setup detect' later to check.[/dim]")
+                console.print(
+                    "[dim]Run 'bluearch-aws-tags cost setup detect' later to check.[/dim]"
+                )
                 # Don't cache pending configs - check again next time
             else:
                 console.print(f"[green][OK] CUR configuration detected:[/green]")
@@ -598,6 +600,6 @@ class CURSetup:
             table.add_row("Region", config.region)
         else:
             table.add_row("Status", "[red]NOT CONFIGURED[/red]")
-            table.add_row("Action Required", "Run 'tag-manager cost setup detect' to configure")
+            table.add_row("Action Required", "Run 'bluearch-aws-tags cost setup detect' to configure")
 
         console.print(table)

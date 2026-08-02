@@ -82,7 +82,7 @@ EXPIRING IN 3 DAYS:
 - i-0abc123 (EC2 Instance) - us-east-1
 - bucket-dev (S3 Bucket) - us-west-2
 
-Actions: Run `tag-manager lifecycle review` to manage these resources.
+Actions: Run `bluearch-aws-tags lifecycle review` to manage these resources.
 ```
 
 **Config storage:** `~/.tag-manager/config.json`
@@ -142,21 +142,21 @@ auto_delete_enabled = Column(Boolean, default=False)
 
 ```bash
 # Interactive review - TUI-like interface
-tag-manager tags lifecycle review
+bluearch-aws-tags lifecycle review
 
 # Bulk operations
-tag-manager tags lifecycle extend --resource-arn <arn> --days 30
-tag-manager tags lifecycle extend --filter-service ec2 --days 14
-tag-manager tags lifecycle protect --resource-arn <arn> --reason "Production"
-tag-manager tags lifecycle unprotect --resource-arn <arn>
+bluearch-aws-tags lifecycle extend --resource-arn <arn> --days 30
+bluearch-aws-tags lifecycle extend --services ec2 --days 14
+bluearch-aws-tags lifecycle protect --resource-arn <arn> --reason "Production"
+bluearch-aws-tags lifecycle protect --resource-arn <arn> --unprotect
 
 # Notification management
-tag-manager tags lifecycle notify-setup  # Configure Slack webhook
-tag-manager tags lifecycle notify-test   # Test notification
-tag-manager tags lifecycle notify        # Send pending notifications
+bluearch-aws-tags lifecycle notify-setup  # Configure Slack webhook
+bluearch-aws-tags lifecycle notify --test # Test notification
+bluearch-aws-tags lifecycle notify        # Send pending notifications
 
 # View decisions
-tag-manager tags lifecycle decisions --last 30d
+bluearch-aws-tags lifecycle review --include-active
 ```
 
 **Interactive review UI:**
@@ -180,39 +180,39 @@ Choice: _
 
 ### Phase 5: Full Flow Integration
 
-**New command group:** `tag-manager lifecycle` (alias for `tags lifecycle`)
+**Public command group:** `bluearch-aws-tags lifecycle`
 
 **Complete workflow:**
 
 ```bash
 # 1. Setup (one-time)
-tag-manager lifecycle notify-setup
+bluearch-aws-tags lifecycle notify-setup
 # Prompts for Slack webhook URL, warning days [7,3,1], etc.
 
 # 2. Create lifecycle policy
-tag-manager lifecycle policy-create --name "dev-cleanup" --ttl-days 30 --warning-days 7,3,1
+bluearch-aws-tags lifecycle policy-create --name "dev-cleanup" --ttl-days 30 --warning-days 7,3,1
 
 # 3. Discover resources and apply TTL
-tag-manager discover all
-tag-manager lifecycle apply-policies
+bluearch-aws-tags discover all
+bluearch-aws-tags lifecycle apply-policies
 # OR apply TTL manually:
-tag-manager lifecycle set-ttl --services ec2 --ttl-days 30
+bluearch-aws-tags lifecycle set-ttl --services ec2 --ttl-days 30
 
 # 4. Scan for expiring resources
-tag-manager lifecycle scan
+bluearch-aws-tags lifecycle scan
 # Shows: 5 expiring in 7 days, 2 expiring in 3 days, 1 expired
 
 # 5. Send notifications
-tag-manager lifecycle notify
+bluearch-aws-tags lifecycle notify
 # Sends Slack message for resources matching warning thresholds
 
 # 6. User reviews and decides
-tag-manager lifecycle review
+bluearch-aws-tags lifecycle review
 # Interactive mode to extend/protect/terminate each resource
 
 # 7. Execute deletions
-tag-manager lifecycle delete-expired --dry-run
-tag-manager lifecycle delete-expired --confirm
+bluearch-aws-tags lifecycle delete-expired --dry-run
+bluearch-aws-tags lifecycle delete-expired --confirm
 ```
 
 ---
@@ -292,7 +292,7 @@ tag-manager lifecycle delete-expired --confirm
 ## User Experience Flow
 
 ```
-User runs: tag-manager lifecycle review
+User runs: bluearch-aws-tags lifecycle review
 
 +--------------------------------------------------+
 | TTL Resource Review                              |
@@ -511,7 +511,7 @@ User needs to stop zombie resources from being created. Solution: TTL and owner 
 ### New CLI Structure
 
 ```
-tag-manager
+bluearch-aws-tags
 ├── lifecycle (FLAGSHIP)
 │   ├── wizard        # End-to-end guided workflow for new users
 │   ├── scan          # Scan for resources (auto multi-account if configured)
@@ -572,7 +572,7 @@ Re-enabled the `policy` command to create a hybrid approach: users can use eithe
 ### Updated CLI Structure
 
 ```
-tag-manager
+bluearch-aws-tags
 ├── lifecycle (FLAGSHIP)
 │   ├── wizard        # End-to-end guided workflow for new users
 │   ├── scan          # Scan for resources (--check-compliance, --noncompliant)
@@ -624,40 +624,40 @@ tag-manager
 
 ```bash
 # Check AWS Org Tag Policy compliance for all resources
-tag-manager lifecycle scan --check-compliance
+bluearch-aws-tags lifecycle scan --check-compliance
 
 # Show only noncompliant resources (missing required tags)
-tag-manager lifecycle scan --noncompliant
+bluearch-aws-tags lifecycle scan --noncompliant
 ```
 
 ### New set-ttl Flag
 
 ```bash
 # Apply TTL only to noncompliant resources (from AWS Org policy check)
-tag-manager lifecycle set-ttl --noncompliant --ttl-days 14
+bluearch-aws-tags lifecycle set-ttl --noncompliant --ttl-days 14
 ```
 
 ### Workflow: Using Both Policy Types Together
 
 ```bash
 # 1. Check if you have AWS Org access
-tag-manager policy check-access
+bluearch-aws-tags policy check-access
 
 # 2a. If yes: View/create AWS Org Tag Policies
-tag-manager policy view
-tag-manager policy create
+bluearch-aws-tags policy view
+bluearch-aws-tags policy create
 
 # 2b. Also create local policies for quick TTL rules
-tag-manager lifecycle policies create
+bluearch-aws-tags lifecycle policies create
 
 # 3. Scan and check compliance
-tag-manager lifecycle scan --check-compliance
+bluearch-aws-tags lifecycle scan --check-compliance
 
 # 4. Apply TTL to noncompliant resources
-tag-manager lifecycle set-ttl --noncompliant --ttl-days 14
+bluearch-aws-tags lifecycle set-ttl --noncompliant --ttl-days 14
 
 # 5. Review expiring resources
-tag-manager lifecycle review
+bluearch-aws-tags lifecycle review
 ```
 
 ### Database Migration

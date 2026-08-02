@@ -1,11 +1,41 @@
 # -*- coding: utf-8 -*-
 """Main entry point for AWS Tag Manager CLI."""
 
+import os
+import sys
+from typing import Optional
+
+if __package__:
+    from .entrypoint import is_raw_version_request, public_version_line
+else:
+    _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+    from tag_manager_cli.entrypoint import is_raw_version_request, public_version_line
+
+
+# ``python -m tag_manager_cli.main --version`` must exit before importing any
+# stateful command modules. Installed and packaged launchers use
+# ``tag_manager_cli.entrypoint`` and take the same fast path there.
+if __name__ == "__main__" and is_raw_version_request(sys.argv[1:]):
+    print(public_version_line())
+    raise SystemExit(0)
+
 import typer
 from rich.prompt import Prompt
-from typing import Optional
-import sys
-import os
+
+
+def _raw_bare_discover_invocation(arguments: list[str]) -> bool:
+    """Recognize bare discovery before importing stateful command modules."""
+    remaining = list(arguments)
+    while remaining and remaining[0] == "--no-prompt":
+        remaining.pop(0)
+    return remaining == ["discover"]
+
+
+_HELP_ONLY_BARE_DISCOVER = _raw_bare_discover_invocation(sys.argv[1:])
+if _HELP_ONLY_BARE_DISCOVER:
+    os.environ["TAG_MANAGER_SUPPRESS_STARTUP_STATE"] = "1"
 
 # Ensure UTF-8 encoding for packaged binaries and all environments
 import locale
@@ -102,7 +132,7 @@ else:
     from .utils.command_suggestions import show_suggestions
 
 app = typer.Typer(
-    name="tag-manager",
+    name="bluearch-aws-tags",
     help="AWS Tag Manager CLI - Complete solution for AWS resource tagging, cost allocation, and compliance",
     no_args_is_help=False,
     rich_markup_mode="rich",
@@ -368,51 +398,57 @@ def show_main_help():
     print_safe("- [cyan]setup[/cyan]         - Setup wizard (AWS credentials, multi-account)")
     print_safe("- [cyan]update[/cyan]        - Update CLI to the latest version")
     print_safe("- [cyan]uninstall[/cyan]     - Remove CLI and all AWS resources")
-    print_safe("- [cyan]web[/cyan]           - Web dashboard server (REST API)\n")
+    print_safe("- [cyan]web[/cyan]           - Web dashboard controls (started by Core)\n")
 
     print_safe("[bold green]QUICK START[/bold green] (new users):")
-    print_safe("  [cyan]tag-manager discover[/cyan]             <- Discover AWS resources first")
-    print_safe("  [cyan]tag-manager lifecycle wizard[/cyan]     <- Recommended! Complete guided workflow\n")
+    print_safe("  [cyan]bluearch-aws-core start --daemon[/cyan] <- Start local services")
+    print_safe("  [cyan]bluearch-aws-tags discover all[/cyan]   <- Discover AWS resources first")
+    print_safe("  [cyan]bluearch-aws-tags lifecycle wizard[/cyan] <- Recommended! Complete guided workflow\n")
 
     print_safe("[bold green]MANUAL WORKFLOW[/bold green] (experienced users):")
-    print_safe("  1. [dim]tag-manager lifecycle policies create[/dim]  - Define resource rules")
-    print_safe("  2. [dim]tag-manager lifecycle scan[/dim]             - Find matching resources")
-    print_safe("  3. [dim]tag-manager lifecycle set-ttl[/dim]          - Apply TTL tags")
-    print_safe("  4. [dim]tag-manager lifecycle review[/dim]           - Manage expiring resources\n")
+    print_safe("  1. [dim]bluearch-aws-tags lifecycle policies create[/dim]  - Define resource rules")
+    print_safe("  2. [dim]bluearch-aws-tags lifecycle scan[/dim]             - Find matching resources")
+    print_safe("  3. [dim]bluearch-aws-tags lifecycle set-ttl[/dim]          - Apply TTL tags")
+    print_safe("  4. [dim]bluearch-aws-tags lifecycle review[/dim]           - Manage expiring resources\n")
 
     print_safe("[bold green]AWS ORG POLICIES[/bold green] (enterprise):")
-    print_safe("  [dim]tag-manager policy check-access[/dim]           - Check AWS Org access")
-    print_safe("  [dim]tag-manager policy create[/dim]                 - Create AWS Org Tag Policy")
-    print_safe("  [dim]tag-manager policy check-compliance[/dim]       - Check resource compliance\n")
+    print_safe("  [dim]bluearch-aws-tags policy check-access[/dim]           - Check AWS Org access")
+    print_safe("  [dim]bluearch-aws-tags policy create[/dim]                 - Create AWS Org Tag Policy")
+    print_safe("  [dim]bluearch-aws-tags policy check-compliance[/dim]       - Check resource compliance\n")
 
     print_safe("[bold green]DAILY OPERATIONS[/bold green]:")
-    print_safe("  [dim]tag-manager lifecycle scan --expiring 7[/dim]   - Resources expiring in 7 days")
-    print_safe("  [dim]tag-manager lifecycle review[/dim]              - Interactive review")
-    print_safe("  [dim]tag-manager lifecycle notify[/dim]              - Send Slack alerts\n")
+    print_safe("  [dim]bluearch-aws-tags lifecycle scan --expiring 7[/dim]   - Resources expiring in 7 days")
+    print_safe("  [dim]bluearch-aws-tags lifecycle review[/dim]              - Interactive review")
+    print_safe("  [dim]bluearch-aws-tags lifecycle notify[/dim]              - Send Slack alerts\n")
 
     print_safe("[bold green]COST ANALYSIS[/bold green]:")
-    print_safe("  [dim]tag-manager cost setup detect[/dim]             - Detect existing CUR")
-    print_safe("  [dim]tag-manager cost summary[/dim]                  - Cost overview")
-    print_safe("  [dim]tag-manager cost services[/dim]                 - Cost by service")
-    print_safe("  [dim]tag-manager cost compare this-month last-month[/dim] - MoM comparison\n")
+    print_safe("  [dim]bluearch-aws-tags cost setup detect[/dim]             - Detect existing CUR")
+    print_safe("  [dim]bluearch-aws-tags cost summary[/dim]                  - Cost overview")
+    print_safe("  [dim]bluearch-aws-tags cost services[/dim]                 - Cost by service")
+    print_safe("  [dim]bluearch-aws-tags cost compare this-month last-month[/dim] - MoM comparison\n")
 
     print_safe("[bold green]AI ASSISTANT[/bold green]:")
-    print_safe("  [dim]tag-manager ask \"what resources are expiring?\"[/dim]")
-    print_safe("  [dim]tag-manager ask chat[/dim]                      - Interactive AI chat\n")
+    print_safe("  [dim]bluearch-aws-tags ask \"what resources are expiring?\"[/dim]")
+    print_safe("  [dim]bluearch-aws-tags ask chat[/dim]                      - Interactive AI chat\n")
 
     print_safe("[bold green]SHELL COMPLETION[/bold green]:")
-    print_safe("  [dim]tag-manager --install-completion[/dim]      - Enable TAB completion for your shell\n")
+    print_safe("  [dim]bluearch-aws-tags --install-completion[/dim]      - Enable TAB completion for your shell\n")
 
-    print_safe("For detailed help: [cyan]tag-manager discover --help[/cyan] or [cyan]tag-manager lifecycle --help[/cyan]")
+    print_safe("For detailed help: [cyan]bluearch-aws-tags discover --help[/cyan] or [cyan]bluearch-aws-tags lifecycle --help[/cyan]")
+
+
+def _is_bare_discover_invocation() -> bool:
+    """Return true only for the help-only public `discover` invocation."""
+    return _HELP_ONLY_BARE_DISCOVER
 
 
 def _ensure_core_for_command(ctx: typer.Context, help_requested: bool, version_requested: bool) -> None:
     """Require a compatible core runtime for product commands.
 
-    `tag-manager update` is intentionally exempt so users can repair or install
+    `bluearch-aws-tags update` is intentionally exempt so users can repair or install
     the required core runtime through the product updater.
     """
-    if ctx.invoked_subcommand in (None, "update", "web"):
+    if ctx.invoked_subcommand in (None, "update", "web") or _is_bare_discover_invocation():
         return
     if help_requested or version_requested:
         return
@@ -426,11 +462,11 @@ def _ensure_core_for_command(ctx: typer.Context, help_requested: bool, version_r
 
         check_core_dependency("tag-manager")
     except Exception as exc:
-        print_safe("[red][ERROR] bluearch-core is required before using Tag Manager commands.[/red]")
+        print_safe("[red][ERROR] bluearch-aws-core is required before using Tags commands.[/red]")
         print_safe(f"[dim]{exc}[/dim]")
-        print_safe(f"[cyan]Required version:[/cyan] bluearch-core >= {MINIMUM_CORE_VERSION}")
-        print_safe("[cyan]Install or update it with:[/cyan] tag-manager update")
-        print_safe("[cyan]Start it with:[/cyan] bluearch-core start --daemon")
+        print_safe(f"[cyan]Required version:[/cyan] bluearch-aws-core >= {MINIMUM_CORE_VERSION}")
+        print_safe("[cyan]Install or update it with:[/cyan] bluearch-aws-tags update")
+        print_safe("[cyan]Start it with:[/cyan] bluearch-aws-core start --daemon")
         raise typer.Exit(1)
 
 
@@ -457,7 +493,7 @@ def main(
     - [cyan]uninstall[/cyan]     - Remove CLI and all AWS resources
 
     [bold green]QUICK START[/bold green]:
-    Run [cyan]tag-manager discover[/cyan] first, then [cyan]tag-manager lifecycle wizard[/cyan] for guided setup.
+    Run [cyan]bluearch-aws-tags discover all[/cyan] first, then [cyan]bluearch-aws-tags lifecycle wizard[/cyan] for guided setup.
 
     [bold green]MANUAL WORKFLOW[/bold green]:
     1. [dim]lifecycle policies create[/dim]  - Define resource rules
@@ -466,86 +502,7 @@ def main(
     4. [dim]lifecycle review[/dim]           - Manage expiring resources
     """
     if version_flag:
-        import subprocess
-        from rich.prompt import Confirm
-
-        try:
-            if __name__ == "__main__" or not __package__:
-                from tag_manager_cli import __version__
-                from tag_manager_cli.utils.version_checker import get_updates, is_dev_version
-            else:
-                from . import __version__
-                from .utils.version_checker import get_updates, is_dev_version
-            version_str = __version__
-        except:
-            version_str = "development"
-
-        # Detect if this is a dev or prod version
-        is_dev = is_dev_version(version_str)
-        channel = "development" if is_dev else "production"
-
-        print_safe(f"AWS Tag Manager CLI {version_str} ({channel})")
-
-        # Skip update check for --help to improve performance
-        # Only check for updates when explicitly running --version without other flags
-        import sys
-        skip_update_check = os.environ.get("TAG_MANAGER_SKIP_UPDATE_CHECK", "").lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        if (
-            not skip_update_check
-            and not os.environ.get("BLUEARCH_CORE_VERSION_PROBE")
-            and not help
-            and '--help' not in sys.argv
-            and '-h' not in sys.argv
-        ):
-            # Check for available updates from the appropriate channel
-            try:
-                # For dev versions, also check prod to see if stable version is available
-                if is_dev:
-                    # First check production updates
-                    prod_updates = get_updates(force_development=False)
-                    if prod_updates:
-                        print_safe(f"\n[yellow]You are running a development build.[/yellow]")
-                        print_safe(f"[green]A stable production version is available: {prod_updates[0]['version']}[/green]")
-                        if Confirm.ask("Would you like to upgrade to the production version?", default=False):
-                            print_safe("\n[blue]Upgrading to production version...[/blue]")
-                            cmd = "brew upgrade bluearchio/tap/bluearch-aws-tags"
-                            print_safe(f"[dim]Executing: {cmd}[/dim]")
-                            subprocess.run(cmd.split())
-                            return
-                        print_safe("")  # Add spacing
-
-                    # Then check dev updates
-                    updates = get_updates(force_development=True)
-                else:
-                    # For prod versions, check prod updates
-                    updates = get_updates(force_development=False)
-
-                if updates:
-                    print_safe(f"\n[yellow]Updates available ({channel} channel):[/yellow]")
-                    for update in updates[:3]:  # Show only the latest 3 updates
-                        print_safe(f"  - [green]{update['version']}[/green] - {update['date']}")
-                        if update['message'].strip():
-                            # Clean up the message - remove JSON escaping and extra quotes
-                            message = update['message'].replace('\\n', '\n').strip('"').strip()
-                            if message:
-                                # Split into lines and indent properly
-                                lines = message.split('\n')
-                                for line in lines:
-                                    if line.strip():
-                                        print_safe(f"    {line.strip()}")
-                            print_safe("")  # Add spacing after each update
-                    print_safe(f"\nRun [cyan]tag-manager update[/cyan] to update")
-                else:
-                    print_safe("[green]You are up to date![/green]")
-            except Exception as e:
-                # Silently fail on update check - don't break version display
-                pass  # Don't even print the error for performance
-
+        print_safe(public_version_line())
         return
 
     _ensure_core_for_command(ctx, help, version_flag)
@@ -555,7 +512,7 @@ def main(
     import sys
     is_help_command = '--help' in sys.argv or '-h' in sys.argv
 
-    if ctx.invoked_subcommand is not None and not no_prompt and not is_help_command:
+    if ctx.invoked_subcommand is not None and not _is_bare_discover_invocation() and not no_prompt and not is_help_command:
         # Only check tasks for actual commands, not help/version
         try:
             if __name__ == "__main__" or not __package__:
@@ -593,11 +550,11 @@ def setup():
     """
     Legacy setup command - redirects to new setup wizard.
 
-    For the full production setup wizard, use: tag-manager setup wizard
+    For the full production setup wizard, use: bluearch-aws-tags setup wizard
     """
     print_safe("[yellow]This command has been replaced with the production setup wizard.[/yellow]")
-    print_safe("Run: [cyan]tag-manager setup wizard[/cyan] for complete guided setup")
-    print_safe("Or run: [cyan]tag-manager setup validate[/cyan] to check system status")
+    print_safe("Run: [cyan]bluearch-aws-tags setup wizard[/cyan] for complete guided setup")
+    print_safe("Or run: [cyan]bluearch-aws-tags setup validate[/cyan] to check system status")
 
     # Still run the legacy onboarding for backward compatibility
     run_onboarding_wizard()
@@ -605,6 +562,9 @@ def setup():
 
 def cli():
     """Entry point for the CLI when used as a module."""
+    if is_raw_version_request(sys.argv[1:]):
+        print(public_version_line())
+        return
     app()
 
 

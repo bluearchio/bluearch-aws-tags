@@ -29,6 +29,7 @@ class PaginatedResponse(BaseModel, Generic[T]):
 class HealthResponse(BaseModel):
     """Health check response."""
 
+    service: str = "bluearch-aws-tags"
     status: str
     database: str
     database_type: Optional[str] = None
@@ -58,4 +59,3 @@ class SetupValidateResponse(BaseModel):
 
     overall: str  # healthy, degraded, unhealthy
     checks: List[SetupCheckItem]
-

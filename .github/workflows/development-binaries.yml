@@ -57,7 +57,7 @@ jobs:
         run: |
           mkdir -p artifacts
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
-            ditto -c -k --keepParent "dist/$BINARY_NAME" "artifacts/$BINARY_NAME-${{ matrix.platform }}-unsigned.zip"
+            ditto --norsrc -c -k "dist/$BINARY_NAME" "artifacts/$BINARY_NAME-${{ matrix.platform }}-unsigned.zip"
           else
             tar -C dist -czf "artifacts/$BINARY_NAME-${{ matrix.platform }}-unsigned.tar.gz" "$BINARY_NAME"
             install -m 0755 scripts/install-linux.sh artifacts/install-linux.sh

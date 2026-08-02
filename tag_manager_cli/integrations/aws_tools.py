@@ -1,11 +1,28 @@
 """AWS tools for querying AWS resources using existing SSO authentication."""
 
+import shlex
+import shutil
+import subprocess
+import sys
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timedelta
 from botocore.exceptions import ClientError
 
 from ..utils.aws_auth import aws_auth
 from ..utils.core_storage import list_all_records
+from ..utils.public_executables import (
+    PUBLIC_TAGS_EXECUTABLE,
+    resolve_public_tags_executable,
+)
+
+
+def _find_public_tags_executable() -> str | None:
+    """Find a canonical packaged or PATH-installed public Tags executable."""
+    for candidate in (sys.executable, shutil.which(PUBLIC_TAGS_EXECUTABLE)):
+        resolved = resolve_public_tags_executable(candidate)
+        if resolved:
+            return resolved
+    return None
 
 
 class AWSTools:
@@ -338,7 +355,7 @@ class AWSTools:
             },
             {
                 "name": "list_managed_alarms",
-                "description": "List CloudWatch alarms created and managed by tag-manager. Shows alarm state, target resource, owner, and configuration. Use this to answer questions like 'What alarms have I created?' or 'Show alarms in ALARM state'.",
+                "description": "List CloudWatch alarms created and managed by BlueArch AWS Tags. Shows alarm state, target resource, owner, and configuration. Use this to answer questions like 'What alarms have I created?' or 'Show alarms in ALARM state'.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -414,7 +431,7 @@ class AWSTools:
                     "properties": {
                         "include_disabled": {
                             "type": "boolean",
-                            "description": "Include accounts not enabled for tag-manager cross-account access (default: false)"
+                            "description": "Include accounts not enabled for BlueArch AWS Tags cross-account access (default: false)"
                         }
                     }
                 }
@@ -450,13 +467,13 @@ class AWSTools:
             # CLI Self-Awareness Tools
             {
                 "name": "run_tag_manager_command",
-                "description": "Run a tag-manager CLI command and return the output. Use for resource discovery, tag scanning, cost analysis, and other read-only CLI operations. Only safe commands are allowed.",
+                "description": "Run a bluearch-aws-tags CLI command and return the output. Use for resource discovery, tag scanning, cost analysis, and other read-only CLI operations. Only safe commands are allowed.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
                         "command": {
                             "type": "string",
-                            "description": "The tag-manager command to run (e.g., 'discover', 'tags scan', 'cost summary', 'cost services', 'tasks list')"
+                            "description": "The bluearch-aws-tags command to run (e.g., 'discover all', 'lifecycle scan', 'cost summary', 'cost services')"
                         },
                         "args": {
                             "type": "string",
@@ -468,7 +485,7 @@ class AWSTools:
             },
             {
                 "name": "get_cli_help",
-                "description": "Get help about tag-manager CLI commands, including usage, examples, prerequisites, and troubleshooting. Use when users ask about CLI commands or need help with errors.",
+                "description": "Get help about bluearch-aws-tags CLI commands, including usage, examples, prerequisites, and troubleshooting. Use when users ask about CLI commands or need help with errors.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -775,7 +792,7 @@ class AWSTools:
             if not cur_config or cur_config.status != 'active':
                 return {
                     'error': 'CUR not configured',
-                    'suggestion': 'CUR (Cost and Usage Reports) is not available. Falling back to Cost Explorer API would provide less detail. Run "cost setup detect" to configure CUR.',
+                    'suggestion': 'CUR (Cost and Usage Reports) is not available. Falling back to Cost Explorer API would provide less detail. Run "bluearch-aws-tags cost setup detect" to configure CUR.',
                     'cur_available': False
                 }
 
@@ -1357,7 +1374,7 @@ Return ONLY the SQL query."""
         resource_arn: Optional[str] = None,
         limit: int = 50
     ) -> Dict[str, Any]:
-        """List CloudWatch alarms managed by tag-manager."""
+        """List CloudWatch alarms managed by BlueArch AWS Tags."""
         try:
             from ..services.alarm_service import alarm_service
             alarms = alarm_service.list_alarms(
@@ -1656,7 +1673,7 @@ Return ONLY the SQL query."""
     # Whitelist of safe commands (read-only operations)
     ALLOWED_CLI_COMMANDS = {
         'discover',
-        'tags scan', 'tags list',
+        'lifecycle scan',
         'cost summary', 'cost services', 'cost ec2', 'cost s3', 'cost rds', 'cost lambda',
         'cost daily', 'cost compare', 'cost forecast', 'cost accounts', 'cost regions',
         'cost resources', 'cost usage-types', 'cost gaps', 'cost anomalies',
@@ -1672,26 +1689,25 @@ Return ONLY the SQL query."""
 
 ## Main Command Groups:
 - `discover` - Discover AWS resources and their tags
-- `tags` - Tag scanning, listing, and management
+- `lifecycle` - Scan and manage resource lifecycle tags
 - `cost` - Cost analysis and FinOps (CUR-powered)
 - `ask` - AI-powered assistant (you're using it now!)
-- `account` - Cross-account setup and management
-- `setup` - Configuration and validation
-- `tasks` - Maintenance task management
+- `policy` - AWS Organizations tag policies
+- `setup` - Configuration, validation, and multi-account management
 - `update` - Update to latest version
 
 ## Quick Start:
 1. Configure AWS: `export AWS_PROFILE=your-profile`
-2. Validate setup: `tag-manager setup validate`
-3. Discover resources: `tag-manager discover`
-4. Scan for untagged: `tag-manager tags scan`
+2. Validate setup: `bluearch-aws-tags setup validate`
+3. Discover resources: `bluearch-aws-tags discover all`
+4. Scan lifecycle resources: `bluearch-aws-tags lifecycle scan`
 """,
         'cost': """
 # Cost Analysis Commands
 
 ## Prerequisites:
 - CUR (Cost and Usage Report) configured in your AWS account
-- Run `tag-manager cost setup detect` to find existing CUR
+- Run `bluearch-aws-tags cost setup detect` to find existing CUR
 
 ## Commands:
 - `cost summary` - Overall cost breakdown by charge type
@@ -1710,24 +1726,24 @@ Return ONLY the SQL query."""
 
 ## Examples:
 ```
-tag-manager cost summary
-tag-manager cost ec2 --view instances
-tag-manager cost compare --periods 2
+bluearch-aws-tags cost summary
+bluearch-aws-tags cost ec2 instances
+bluearch-aws-tags cost compare this-month last-month
 ```
 """,
         'tags': """
-# Tag Management Commands
+# Lifecycle Tag Management Commands
 
 ## Commands:
-- `tags scan` - Find untagged resources
-- `tags list` - List all tags in use
-- `tags apply` - Apply tags to resources (requires confirmation)
+- `lifecycle scan` - Find resources governed by lifecycle policies
+- `lifecycle review` - Review expiring resources interactively
+- `lifecycle set-ttl` - Apply TTL tags to selected resources
 
 ## Examples:
 ```
-tag-manager tags scan
-tag-manager tags scan --service ec2
-tag-manager tags list --key Environment
+bluearch-aws-tags lifecycle scan
+bluearch-aws-tags lifecycle review
+bluearch-aws-tags lifecycle set-ttl
 ```
 
 ## Required Tags (typical):
@@ -1740,7 +1756,7 @@ tag-manager tags list --key Environment
 # Resource Discovery
 
 ## Command:
-`tag-manager discover` - Scan AWS for resources and their tags
+`bluearch-aws-tags discover all` - Scan AWS for resources and their tags
 
 ## What it finds:
 - EC2 instances
@@ -1756,15 +1772,15 @@ tag-manager tags list --key Environment
 
 ## Example:
 ```
-tag-manager discover
-tag-manager discover --regions us-east-1,us-west-2
+bluearch-aws-tags discover all
+bluearch-aws-tags discover all --regions us-east-1,us-west-2
 ```
 """,
         'accounts': """
 # Cross-Account Management
 
 ## Setup:
-`tag-manager account setup` - Deploy cross-account IAM roles
+`bluearch-aws-tags setup multi-account` - Deploy cross-account IAM roles
 
 ## How it works:
 1. Deploys StackSet from management account
@@ -1772,9 +1788,9 @@ tag-manager discover --regions us-east-1,us-west-2
 3. Uses secure ExternalId stored in Secrets Manager
 
 ## Commands:
-- `account setup` - Interactive setup wizard
-- `account status` - Check enabled accounts
-- `account list` - List organization accounts
+- `setup multi-account` - Interactive deployment
+- `setup multi-account --validate-only` - Validate prerequisites
+- `setup multi-account --complete` - Deploy, test, and enable all accounts
 
 ## In Ask Chat:
 Say "list my AWS accounts" or "show costs across all accounts"
@@ -1800,7 +1816,7 @@ Say "list my AWS accounts" or "show costs across all accounts"
 ```
 export AWS_PROFILE=your-sso-profile
 aws sso login
-tag-manager setup validate
+bluearch-aws-tags setup validate
 ```
 """,
         'troubleshooting': """
@@ -1809,11 +1825,11 @@ tag-manager setup validate
 ## Common Issues:
 
 ### "No CUR found"
-- Run: `tag-manager cost setup detect`
-- Or create CUR: `tag-manager cost setup create`
+- Run: `bluearch-aws-tags cost setup detect`
+- Or create CUR: `bluearch-aws-tags cost setup create`
 
 ### "Permission denied" errors
-- Run: `tag-manager setup validate` to see missing permissions
+- Run: `bluearch-aws-tags setup validate` to see missing permissions
 - Check iam-policy.json for required permissions
 
 ### Cost commands return empty
@@ -1825,17 +1841,17 @@ tag-manager setup validate
 - Verify profile: `echo $AWS_PROFILE`
 
 ### Database errors
-- Reinitialize: `tag-manager setup database --force`
+- Reinitialize: `bluearch-aws-tags setup database --force`
 - Location: ~/.tag-manager/data/tag-manager.db
 
 ### Binary won't run (macOS)
 - Allow in System Preferences > Security
-- Or run: `xattr -d com.apple.quarantine /path/to/tag-manager`
+- Or run: `xattr -d com.apple.quarantine /path/to/bluearch-aws-tags`
 
 ## Debug Mode:
 ```
 export TAG_MANAGER_DEBUG=1
-tag-manager <command>
+bluearch-aws-tags <command>
 ```
 """,
         'ask': """
@@ -1865,37 +1881,51 @@ tag-manager <command>
 
     @classmethod
     def run_tag_manager_command(cls, command: str, args: str = "") -> Dict[str, Any]:
-        """Run a tag-manager CLI command (safe commands only)."""
-        import subprocess
-        import shlex
-
+        """Run a bluearch-aws-tags CLI command (safe commands only)."""
         # Normalize command
         full_command = f"{command} {args}".strip()
+        try:
+            command_argv = shlex.split(full_command)
+        except ValueError as exc:
+            return {
+                'error': f"Invalid command arguments: {exc}",
+                'message': 'Use normal CLI argv without shell syntax',
+            }
 
         # Check if command is allowed
-        is_allowed = False
-        for allowed in cls.ALLOWED_CLI_COMMANDS:
-            if full_command.startswith(allowed) or command.startswith(allowed):
-                is_allowed = True
-                break
+        allowed_prefixes = [tuple(shlex.split(allowed)) for allowed in cls.ALLOWED_CLI_COMMANDS]
+        is_allowed = any(
+            tuple(command_argv[:len(prefix)]) == prefix
+            for prefix in allowed_prefixes
+        )
 
         if not is_allowed:
             return {
                 'error': f"Command not allowed: '{command}'",
-                'message': 'Only read-only commands are permitted. Blocked commands include: tags apply, account setup, update',
+                'message': 'Only registered read-only public commands are permitted; mutation and update operations are blocked.',
                 'allowed_commands': list(cls.ALLOWED_CLI_COMMANDS)
             }
 
         # Block dangerous flags
-        if '--force' in full_command or '-f' in full_command.split():
+        if any(
+            (part.startswith('-f') and not part.startswith('--'))
+            or part == '--force'
+            or part.startswith('--force=')
+            for part in command_argv
+        ):
             return {
                 'error': 'The --force flag is not allowed for safety',
                 'message': 'Remove --force and try again'
             }
 
         try:
-            # Build the command
-            cmd_parts = ['python', '-m', 'tag_manager_cli.main'] + shlex.split(full_command)
+            executable = _find_public_tags_executable()
+            if executable is None:
+                return {
+                    'error': 'A safe bluearch-aws-tags executable was not found',
+                    'command': f"bluearch-aws-tags {full_command}",
+                }
+            cmd_parts = [executable, *command_argv]
 
             # Execute with timeout
             result = subprocess.run(
@@ -1903,7 +1933,6 @@ tag-manager <command>
                 capture_output=True,
                 text=True,
                 timeout=60,
-                env=None  # Inherit environment
             )
 
             output = result.stdout
@@ -1915,7 +1944,7 @@ tag-manager <command>
                 output = output[:10000] + "\n\n[Output truncated - showing first 10KB]"
 
             return {
-                'command': f"tag-manager {full_command}",
+                'command': f"bluearch-aws-tags {full_command}",
                 'exit_code': result.returncode,
                 'output': output,
                 'success': result.returncode == 0
@@ -1924,12 +1953,12 @@ tag-manager <command>
         except subprocess.TimeoutExpired:
             return {
                 'error': 'Command timed out after 60 seconds',
-                'command': f"tag-manager {full_command}"
+                'command': f"bluearch-aws-tags {full_command}"
             }
         except Exception as e:
             return {
                 'error': f'Failed to execute command: {str(e)}',
-                'command': f"tag-manager {full_command}"
+                'command': f"bluearch-aws-tags {full_command}"
             }
 
     @classmethod

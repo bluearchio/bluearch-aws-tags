@@ -110,9 +110,9 @@ def show_usage():
     interactive  - Start interactive chat
 
 [bold]Or use the CLI directly:[/bold]
-    tag-manager ask chat                                    # Interactive mode
-    tag-manager ask question "What EC2 instances exist?"   # Single question
-    tag-manager ask models                                  # List available models
+    bluearch-aws-tags ask chat                                    # Interactive mode
+    bluearch-aws-tags ask question "What EC2 instances exist?"   # Single question
+    bluearch-aws-tags ask models                                  # List available models
     """)
 
 
