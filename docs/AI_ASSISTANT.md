@@ -439,8 +439,8 @@ The AI assistant integrates seamlessly:
 # Use AI to find issues
 bluearch-aws-tags ask question "Find untagged resources"
 
-# Then fix with Tag Manager
-bluearch-aws-tags tags apply --interactive
+# Then use the supported guided lifecycle workflow
+bluearch-aws-tags lifecycle wizard
 
 # Verify
 bluearch-aws-tags ask question "Are there still untagged resources?"
@@ -457,7 +457,7 @@ bluearch-aws-tags ask question "Are there still untagged resources?"
 ## Limitations
 
 1. **Database Dependency:** Some queries require Tag Manager's resource database
-   - Run `bluearch-aws-tags tags discover` first
+   - Run `bluearch-aws-tags discover all` first
 2. **Permissions:** Answers limited by your AWS SSO role permissions
 3. **Regions:** Some questions may require multi-region access
 4. **Cost Explorer:** Cost queries require Cost Explorer API access

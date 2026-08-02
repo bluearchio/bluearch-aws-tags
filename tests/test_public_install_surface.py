@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 import re
+import json
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -8,12 +12,14 @@ ROOT = Path(__file__).resolve().parents[1]
 CUSTOMER_ROOTS = (
     ROOT / "README.md",
     ROOT / "docs",
+    ROOT / "config",
     ROOT / "examples",
     ROOT / "demo",
     ROOT / "frontend" / "src",
     ROOT / "tag_manager_cli",
+    ROOT / "scripts",
 )
-ACTIVE_SUFFIXES = {".md", ".py", ".sh", ".ts", ".vue", ".js"}
+ACTIVE_SUFFIXES = {".json", ".md", ".py", ".sh", ".ts", ".vue", ".js", ".yaml", ".yml"}
 LEGACY_COMMAND = re.compile(
     r"(?<!=)\b(?:"
     r"tag-manager\s+(?:"
@@ -25,6 +31,17 @@ LEGACY_COMMAND = re.compile(
     r"stop\b|uninstall\b|update\b|version\b|web\b)"
     r")",
 )
+PUBLIC_INVOCATION = re.compile(r"\bbluearch-aws-tags\s+([a-z][a-z0-9-]*)\b")
+NON_COMMAND_PROSE = {
+    "binary",
+    "command",
+    "executable",
+    "found",
+    "integration",
+    "launcher",
+    "managed",
+    "not",
+}
 
 
 def _active_files():
@@ -47,6 +64,47 @@ def test_customer_guidance_never_invokes_deprecated_executable() -> None:
             if LEGACY_COMMAND.search(line):
                 findings.append(f"{path.relative_to(ROOT)}:{line_number}: {line.strip()}")
 
+    assert findings == []
+
+
+def test_every_advertised_public_top_level_command_is_registered(tmp_path: Path) -> None:
+    env = {
+        **os.environ,
+        "HOME": os.fspath(tmp_path),
+        "PYTHONPATH": os.fspath(ROOT),
+        "TAG_MANAGER_SUPPRESS_STARTUP_STATE": "1",
+        "TAG_MANAGER_SKIP_UPDATE_CHECK": "1",
+    }
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import json, typer; "
+                "from tag_manager_cli.main import app; "
+                "print(json.dumps(sorted(typer.main.get_command(app).commands)))"
+            ),
+        ],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    registered = set(json.loads(probe.stdout.splitlines()[-1]))
+    findings = []
+    for path in _active_files():
+        for line_number, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1
+        ):
+            for match in PUBLIC_INVOCATION.finditer(line):
+                command = match.group(1)
+                if command not in registered and command not in NON_COMMAND_PROSE:
+                    findings.append(
+                        f"{path.relative_to(ROOT)}:{line_number}: {command}: {line.strip()}"
+                    )
+
+    assert "tags" not in registered
     assert findings == []
 
 

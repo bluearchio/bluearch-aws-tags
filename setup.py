@@ -59,7 +59,7 @@ setup(
     install_requires=requirements,
     entry_points={
         "console_scripts": [
-            "bluearch-aws-tags=tag_manager_cli.main:cli",
+            "bluearch-aws-tags=tag_manager_cli.entrypoint:cli",
         ],
     },
     include_package_data=True,

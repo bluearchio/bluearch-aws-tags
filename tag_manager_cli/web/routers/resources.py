@@ -31,7 +31,7 @@ async def list_resources(
     resource_type: Optional[str] = Query(None, description="Filter by resource type"),
     search: Optional[str] = Query(None, description="Search ARN or resource ID"),
     protected: Optional[bool] = Query(None, description="Filter by protection status"),
-    tagged: Optional[bool] = Query(None, description="Filter by bluearch-aws-tags tags (bluearch:ttl)"),
+    tagged: Optional[bool] = Query(None, description="Filter by BlueArch TTL tags (bluearch:ttl)"),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
     current_user: LocalUser = Depends(get_current_user),
@@ -211,7 +211,7 @@ async def remove_tags(
         resource["lifecycle_policy_id"] = None
         update_storage_payload("core", "resources", str(resource["id"]), resource)
 
-    parts = [f"Removed bluearch-aws-tags tags from {len(resources)} resource(s)"]
+    parts = [f"Removed BlueArch TTL tags from {len(resources)} resource(s)"]
     if aws_ok:
         parts.append(f"AWS tags removed from {aws_ok}")
     if aws_fail:

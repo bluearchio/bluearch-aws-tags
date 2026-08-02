@@ -17,7 +17,8 @@ fi
 }
 
 VERIFY_DIR="$(mktemp -d)"
-trap 'rm -rf "$VERIFY_DIR"' EXIT
+VERSION_HOME="$(mktemp -d)"
+trap 'rm -rf "$VERIFY_DIR" "$VERSION_HOME"' EXIT
 
 ditto -x -k "$ZIP_PATH" "$VERIFY_DIR"
 MATCHES="$(find "$VERIFY_DIR" -type f -name "$PUBLIC_BINARY_NAME" -print)"
@@ -35,9 +36,13 @@ EXPECTED="$VERIFY_DIR/$PUBLIC_BINARY_NAME"
 codesign --verify --deep --strict --verbose=2 "$EXPECTED"
 spctl --assess --type execute --verbose=4 "$EXPECTED"
 file "$EXPECTED" | grep -q 'arm64'
-VERSION_OUTPUT="$("$EXPECTED" --version)"
+VERSION_OUTPUT="$(HOME="$VERSION_HOME" "$EXPECTED" --version)"
 [[ "$VERSION_OUTPUT" == "$PUBLIC_BINARY_NAME $EXPECTED_VERSION (production)" ]] || {
   echo "unexpected public version output: $VERSION_OUTPUT" >&2
+  exit 1
+}
+[[ ! -e "$VERSION_HOME/.tag-manager" ]] || {
+  echo "version probe created state in $VERSION_HOME" >&2
   exit 1
 }
 "$EXPECTED" --help >/dev/null

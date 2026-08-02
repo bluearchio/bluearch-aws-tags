@@ -101,7 +101,7 @@ bluearch-aws-tags cost gaps --required-tags Environment,Team,CostCenter
 bluearch-aws-tags cost anomalies detect --tag-key Team --percent-threshold 30
 
 # Show version
-bluearch-aws-tags version
+bluearch-aws-tags --version
 
 # Use specific AWS profile
 bluearch-aws-tags --profile my-sso-profile interactive

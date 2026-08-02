@@ -1,11 +1,28 @@
 # -*- coding: utf-8 -*-
 """Main entry point for AWS Tag Manager CLI."""
 
+import os
+import sys
+from typing import Optional
+
+if __package__:
+    from .entrypoint import is_raw_version_request, public_version_line
+else:
+    _PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+    from tag_manager_cli.entrypoint import is_raw_version_request, public_version_line
+
+
+# ``python -m tag_manager_cli.main --version`` must exit before importing any
+# stateful command modules. Installed and packaged launchers use
+# ``tag_manager_cli.entrypoint`` and take the same fast path there.
+if __name__ == "__main__" and is_raw_version_request(sys.argv[1:]):
+    print(public_version_line())
+    raise SystemExit(0)
+
 import typer
 from rich.prompt import Prompt
-from typing import Optional
-import sys
-import os
 
 
 def _raw_bare_discover_invocation(arguments: list[str]) -> bool:
@@ -485,20 +502,7 @@ def main(
     4. [dim]lifecycle review[/dim]           - Manage expiring resources
     """
     if version_flag:
-        try:
-            if __name__ == "__main__" or not __package__:
-                from tag_manager_cli import __version__
-                from tag_manager_cli.utils.version_checker import is_dev_version
-            else:
-                from . import __version__
-                from .utils.version_checker import is_dev_version
-            version_str = __version__
-        except Exception:
-            version_str = "development"
-
-        is_dev = is_dev_version(version_str)
-        channel = "development" if is_dev else "production"
-        print_safe(f"bluearch-aws-tags {version_str} ({channel})")
+        print_safe(public_version_line())
         return
 
     _ensure_core_for_command(ctx, help, version_flag)
@@ -558,6 +562,9 @@ def setup():
 
 def cli():
     """Entry point for the CLI when used as a module."""
+    if is_raw_version_request(sys.argv[1:]):
+        print(public_version_line())
+        return
     app()
 
 

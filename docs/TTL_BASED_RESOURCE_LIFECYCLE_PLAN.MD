@@ -142,21 +142,21 @@ auto_delete_enabled = Column(Boolean, default=False)
 
 ```bash
 # Interactive review - TUI-like interface
-bluearch-aws-tags tags lifecycle review
+bluearch-aws-tags lifecycle review
 
 # Bulk operations
-bluearch-aws-tags tags lifecycle extend --resource-arn <arn> --days 30
-bluearch-aws-tags tags lifecycle extend --filter-service ec2 --days 14
-bluearch-aws-tags tags lifecycle protect --resource-arn <arn> --reason "Production"
-bluearch-aws-tags tags lifecycle unprotect --resource-arn <arn>
+bluearch-aws-tags lifecycle extend --resource-arn <arn> --days 30
+bluearch-aws-tags lifecycle extend --services ec2 --days 14
+bluearch-aws-tags lifecycle protect --resource-arn <arn> --reason "Production"
+bluearch-aws-tags lifecycle protect --resource-arn <arn> --unprotect
 
 # Notification management
-bluearch-aws-tags tags lifecycle notify-setup  # Configure Slack webhook
-bluearch-aws-tags tags lifecycle notify-test   # Test notification
-bluearch-aws-tags tags lifecycle notify        # Send pending notifications
+bluearch-aws-tags lifecycle notify-setup  # Configure Slack webhook
+bluearch-aws-tags lifecycle notify --test # Test notification
+bluearch-aws-tags lifecycle notify        # Send pending notifications
 
 # View decisions
-bluearch-aws-tags tags lifecycle decisions --last 30d
+bluearch-aws-tags lifecycle review --include-active
 ```
 
 **Interactive review UI:**
@@ -180,7 +180,7 @@ Choice: _
 
 ### Phase 5: Full Flow Integration
 
-**New command group:** `bluearch-aws-tags lifecycle` (alias for `tags lifecycle`)
+**Public command group:** `bluearch-aws-tags lifecycle`
 
 **Complete workflow:**
 

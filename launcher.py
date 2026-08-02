@@ -25,7 +25,7 @@ sys.path.insert(0, current_dir)
 # Import and run the main CLI
 if __name__ == "__main__":
     try:
-        from tag_manager_cli.main import cli
+        from tag_manager_cli.entrypoint import cli
         cli()
     except ImportError as e:
         print(f"Error importing tag_manager_cli: {e}")

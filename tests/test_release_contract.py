@@ -52,6 +52,18 @@ def test_release_gate_proves_an_immutable_tag_ref_at_checked_out_main() -> None:
     assert '"$head_sha" != "$main_sha"' in gate
 
 
+def test_release_gate_requires_dev_to_be_promoted_into_tagged_main() -> None:
+    verify_job = _workflow()["jobs"]["verify"]
+    gate = next(
+        step for step in verify_job["steps"]
+        if step.get("name") == "Verify tag, committed version, and main SHA"
+    )["run"]
+
+    assert "dev:refs/remotes/origin/dev" in gate
+    assert 'git merge-base --is-ancestor refs/remotes/origin/dev "$head_sha"' in gate
+    assert "origin/dev must be merged into main before tagging a release" in gate
+
+
 def test_branch_named_like_a_release_tag_cannot_use_manual_dispatch() -> None:
     verify_job = _workflow()["jobs"]["verify"]
     gate = _run_text(verify_job)
@@ -114,15 +126,19 @@ def test_committed_versions_are_bare_and_equal() -> None:
     assert re.fullmatch(r"\d+\.\d+\.\d+", init_version)
 
 
-def test_version_probe_is_public_named_and_noninteractive(tmp_path: Path) -> None:
-    env = {
-        **os.environ,
-        "HOME": str(tmp_path),
-        "PYTHONPATH": str(ROOT),
-        "TAG_MANAGER_SKIP_UPDATE_CHECK": "",
-    }
+@pytest.mark.parametrize("module", ["tag_manager_cli.main", "tag_manager_cli.entrypoint"])
+@pytest.mark.parametrize("flag", ["--version", "-V"])
+def test_module_version_probe_is_exact_and_stateless(
+    tmp_path: Path, module: str, flag: str
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    env = os.environ.copy()
+    env.update({"HOME": str(home), "PYTHONPATH": str(ROOT)})
+    env.pop("TAG_MANAGER_SUPPRESS_STARTUP_STATE", None)
+    env.pop("TAG_MANAGER_SKIP_UPDATE_CHECK", None)
     result = subprocess.run(
-        [sys.executable, "-m", "tag_manager_cli.main", "--version"],
+        [sys.executable, "-m", module, flag],
         cwd=ROOT,
         env=env,
         capture_output=True,
@@ -131,9 +147,62 @@ def test_version_probe_is_public_named_and_noninteractive(tmp_path: Path) -> Non
     )
 
     assert result.returncode == 0
-    assert "bluearch-aws-tags 0.12.4 (production)" in result.stdout
-    assert "Would you like" not in result.stdout
-    assert "You are up to date" not in result.stdout
+    assert result.stdout == "bluearch-aws-tags 0.12.4 (production)\n"
+    assert result.stderr == ""
+    assert list(home.iterdir()) == []
+
+
+@pytest.mark.parametrize("flag", ["--version", "-V"])
+def test_installed_public_command_version_is_exact_and_stateless(
+    tmp_path: Path, flag: str
+) -> None:
+    executable = Path(sys.executable).with_name("bluearch-aws-tags")
+    assert executable.is_file(), "tests require the editable package console script"
+    home = tmp_path / "home"
+    home.mkdir()
+    env = os.environ.copy()
+    env.update({"HOME": str(home), "PYTHONPATH": str(ROOT)})
+    env.pop("TAG_MANAGER_SUPPRESS_STARTUP_STATE", None)
+    env.pop("TAG_MANAGER_SKIP_UPDATE_CHECK", None)
+
+    result = subprocess.run(
+        [executable, flag],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout == "bluearch-aws-tags 0.12.4 (production)\n"
+    assert result.stderr == ""
+    assert list(home.iterdir()) == []
+
+
+def test_all_build_and_distribution_launchers_use_stateless_entrypoint() -> None:
+    setup_text = (ROOT / "setup.py").read_text(encoding="utf-8")
+    launchers = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in ("cli_entry.py", "launcher.py")
+    )
+    build_scripts = "\n".join(
+        (ROOT / path).read_text(encoding="utf-8")
+        for path in ("scripts/build_nuitka_linux.sh", "scripts/build_nuitka_macos.sh")
+    )
+    release_text = WORKFLOW.read_text(encoding="utf-8")
+    verifier = (ROOT / "scripts/verify_macos_artifact.sh").read_text(encoding="utf-8")
+
+    assert "bluearch-aws-tags=tag_manager_cli.entrypoint:cli" in setup_text
+    assert "from tag_manager_cli.entrypoint import cli" in launchers
+    assert "from tag_manager_cli.main import cli" not in launchers
+    assert 'ENTRY_IMPORT="${ENTRY_IMPORT:-tag_manager_cli.entrypoint}"' in build_scripts
+    assert build_scripts.count('VERSION_HOME="$(mktemp -d)"') == 2
+    assert build_scripts.count('[[ ! -e "$VERSION_HOME/.tag-manager" ]]') == 2
+    assert 'HOME="$version_home" "$verify_dir/$BINARY_NAME" --version' in release_text
+    assert 'test ! -e "$version_home/.tag-manager"' in release_text
+    assert 'HOME="$VERSION_HOME" "$EXPECTED" --version' in verifier
+    assert '[[ ! -e "$VERSION_HOME/.tag-manager" ]]' in verifier
 
 
 def test_version_setter_accepts_only_v_prefixed_semver(tmp_path: Path) -> None:

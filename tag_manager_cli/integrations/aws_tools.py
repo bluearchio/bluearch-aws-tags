@@ -431,7 +431,7 @@ class AWSTools:
                     "properties": {
                         "include_disabled": {
                             "type": "boolean",
-                            "description": "Include accounts not enabled for bluearch-aws-tags cross-account access (default: false)"
+                            "description": "Include accounts not enabled for BlueArch AWS Tags cross-account access (default: false)"
                         }
                     }
                 }

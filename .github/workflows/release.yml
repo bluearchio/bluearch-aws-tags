@@ -44,12 +44,18 @@ jobs:
             echo "::error::Release must run from an immutable tag ref"
             exit 1
           fi
-          git fetch --no-tags origin main:refs/remotes/origin/main
+          git fetch --no-tags origin \
+            main:refs/remotes/origin/main \
+            dev:refs/remotes/origin/dev
           tag_sha="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
           head_sha="$(git rev-parse "HEAD^{commit}")"
           main_sha="$(git rev-parse "refs/remotes/origin/main^{commit}")"
           if [[ "$tag_sha" != "$head_sha" || "$head_sha" != "$main_sha" ]]; then
             echo "::error::Release tag, checked-out HEAD, and origin/main must be the same commit"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor refs/remotes/origin/dev "$head_sha"; then
+            echo "::error::origin/dev must be merged into main before tagging a release"
             exit 1
           fi
           python3 - <<'PY'
@@ -118,13 +124,15 @@ jobs:
           tar -C dist -czf "artifacts/$BINARY_NAME-linux-x86_64.tar.gz" "$BINARY_NAME"
           install -m 0755 scripts/install-linux.sh artifacts/install-linux.sh
           verify_dir="$(mktemp -d)"
-          trap 'rm -rf "$verify_dir"' EXIT
+          version_home="$(mktemp -d)"
+          trap 'rm -rf "$verify_dir" "$version_home"' EXIT
           tar -xzf "artifacts/$BINARY_NAME-linux-x86_64.tar.gz" -C "$verify_dir"
           test -x "$verify_dir/$BINARY_NAME"
           file "$verify_dir/$BINARY_NAME" | grep -Eq 'x86-64|x86_64'
           expected_version="${RELEASE_TAG#v}"
-          version_output="$("$verify_dir/$BINARY_NAME" --version)"
+          version_output="$(HOME="$version_home" "$verify_dir/$BINARY_NAME" --version)"
           [[ "$version_output" == "$BINARY_NAME $expected_version (production)" ]]
+          test ! -e "$version_home/.tag-manager"
           "$verify_dir/$BINARY_NAME" --help >/dev/null
           "$verify_dir/$BINARY_NAME" discover --help >/dev/null
       - name: Generate final Linux artifact SBOM

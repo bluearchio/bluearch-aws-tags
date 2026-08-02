@@ -1073,7 +1073,7 @@ def _auto_apply_rules(services: Optional[str], resource_arns: Optional[List[str]
                     )
                     
                     console.print(f"[green]OK[/green] Queued bulk tagging job: {result.id}")
-                    console.print("[dim]Use 'bluearch-aws-tags tags status' to monitor progress[/dim]")
+                    console.print("[dim]Use 'bluearch-aws-tags lifecycle review' to review resource state[/dim]")
                     
                 except Exception as e:
                     if "has no attribute 'delay'" in str(e):
@@ -1617,9 +1617,9 @@ def _scan_expired_resources(services: Optional[str], dry_run: bool):
         # Next steps
         console.print(f"\n[bold blue]Recommended Actions:[/bold blue]")
         if risk_analysis["warning_needed"] > 0:
-            console.print(f"1. Send warnings: [cyan]bluearch-aws-tags tags lifecycle delete-expired --dry-run[/cyan]")
+            console.print("1. Preview expired resources: [cyan]bluearch-aws-tags lifecycle delete --dry-run[/cyan]")
         if risk_analysis["deletable"] > 0:
-            console.print(f"2. Delete ready resources: [cyan]bluearch-aws-tags tags lifecycle delete-expired[/cyan]")
+            console.print("2. Delete ready resources: [cyan]bluearch-aws-tags lifecycle delete[/cyan]")
         if risk_analysis["protected"] > 0:
             console.print(f"3. Review protected resources manually")
 
@@ -2241,7 +2241,7 @@ def _validate_resource_tags(resource, required_tags: List[str], critical_tags: s
                 "severity": severity,
                 "tag": tag_key,
                 "message": f"Missing required tag: {tag_key}",
-                "fix_command": f"bluearch-aws-tags tags apply --resource-arn {resource.resource_arn} --tag-key {tag_key}"
+                "fix_command": "bluearch-aws-tags lifecycle wizard"
             })
     
     # Check for low-quality tag values
@@ -2253,7 +2253,7 @@ def _validate_resource_tags(resource, required_tags: List[str], critical_tags: s
                 "tag": tag_key,
                 "current_value": tag_value,
                 "message": f"Low-quality tag value for {tag_key}: '{tag_value}'",
-                "fix_command": f"bluearch-aws-tags tags apply --resource-arn {resource.resource_arn} --tag-key {tag_key}"
+                "fix_command": "bluearch-aws-tags lifecycle wizard"
             })
     
     # Strict mode additional checks
@@ -2268,7 +2268,7 @@ def _validate_resource_tags(resource, required_tags: List[str], critical_tags: s
                         "type": "outdated_tags",
                         "severity": "low",
                         "message": "Tags haven't been updated in over 90 days",
-                        "fix_command": f"bluearch-aws-tags tags apply --resource-arn {resource.resource_arn} --auto"
+                        "fix_command": "bluearch-aws-tags lifecycle wizard"
                     })
             except:
                 pass
@@ -2282,7 +2282,7 @@ def _validate_resource_tags(resource, required_tags: List[str], critical_tags: s
                 "severity": "medium",
                 "tags": list(missing_lifecycle),
                 "message": f"Missing lifecycle tags: {', '.join(missing_lifecycle)}",
-                "fix_command": f"bluearch-aws-tags tags lifecycle set-ttl --resource-arn {resource.resource_arn}"
+                "fix_command": f"bluearch-aws-tags lifecycle set-ttl --resource-arn {resource.resource_arn}"
             })
         
         # Check for inconsistent environment tags
@@ -2298,7 +2298,7 @@ def _validate_resource_tags(resource, required_tags: List[str], critical_tags: s
                     "current_value": current_tags['Environment'],
                     "expected_value": "Production",
                     "message": f"Environment tag '{current_tags['Environment']}' doesn't match resource name pattern",
-                    "fix_command": f"bluearch-aws-tags tags apply --resource-arn {resource.resource_arn} --tag-key Environment --tag-value Production"
+                    "fix_command": "bluearch-aws-tags lifecycle wizard"
                 })
     
     return issues
@@ -2394,17 +2394,17 @@ def _display_validation_results(results: Dict, show_fixes: bool):
             
             if fix_types.get("interactive"):
                 console.print(f"1. Fix {fix_types['interactive']} issues interactively:")
-                console.print("   [cyan]bluearch-aws-tags tags apply --interactive[/cyan]")
+                console.print("   [cyan]bluearch-aws-tags lifecycle wizard[/cyan]")
             
             if fix_types.get("auto"):
                 console.print(f"2. Apply automated fixes to {fix_types['auto']} resources:")
-                console.print("   [cyan]bluearch-aws-tags tags apply --auto[/cyan]")
+                console.print("   [cyan]bluearch-aws-tags lifecycle wizard[/cyan]")
             
             if fix_types.get("lifecycle"):
                 console.print(f"3. Set lifecycle tags for {fix_types['lifecycle']} resources:")
-                console.print("   [cyan]bluearch-aws-tags tags lifecycle set-ttl --ttl-days 30[/cyan]")
+                console.print("   [cyan]bluearch-aws-tags lifecycle set-ttl --ttl-days 30[/cyan]")
             
-            console.print("\n[dim]Run 'bluearch-aws-tags tags rules enforce --dry-run' to preview all fixes[/dim]")
+            console.print("\n[dim]Run 'bluearch-aws-tags lifecycle set-ttl --dry-run' to preview lifecycle changes[/dim]")
 
 
 # === REPORTING AND MONITORING COMMANDS ===
@@ -2937,18 +2937,18 @@ def show_status():
             recommendations = []
             
             if compliance_rate < 50:
-                recommendations.append(("[CRITICAL] CRITICAL", "Low compliance rate", "bluearch-aws-tags tags scan && bluearch-aws-tags tags apply --interactive"))
+                recommendations.append(("[CRITICAL] CRITICAL", "Low compliance rate", "bluearch-aws-tags lifecycle scan && bluearch-aws-tags lifecycle wizard"))
             elif compliance_rate < 80:
-                recommendations.append(("[WARN] IMPORTANT", "Moderate compliance issues", "bluearch-aws-tags tags scan && bluearch-aws-tags tags apply --auto"))
+                recommendations.append(("[WARN] IMPORTANT", "Moderate compliance issues", "bluearch-aws-tags lifecycle scan && bluearch-aws-tags lifecycle wizard"))
             
             if risk_analysis["high_risk"] > 0:
-                recommendations.append(("[URGENT] URGENT", f"{risk_analysis['high_risk']} high-risk resources", "bluearch-aws-tags tags apply --interactive"))
+                recommendations.append(("[URGENT] URGENT", f"{risk_analysis['high_risk']} high-risk resources", "bluearch-aws-tags lifecycle wizard"))
             
             if active_rules == 0:
-                recommendations.append(("[SETUP] SETUP", "No automation rules active", "bluearch-aws-tags tags rules load config/sample_tagging_rules.json"))
+                recommendations.append(("[SETUP] SETUP", "No lifecycle policies active", "bluearch-aws-tags lifecycle policies create"))
             
             if expired_resources > 0:
-                recommendations.append(("[CLEANUP] CLEANUP", f"{expired_resources} expired resources", "bluearch-aws-tags tags lifecycle scan-expired"))
+                recommendations.append(("[CLEANUP] CLEANUP", f"{expired_resources} expired resources", "bluearch-aws-tags lifecycle scan --expiring 0"))
             
             if lifecycle_policies == 0 and total_resources > 50:
                 recommendations.append(("[TIME] LIFECYCLE", "No lifecycle management", "Configure lifecycle policies for resource cleanup"))
@@ -2962,11 +2962,11 @@ def show_status():
             
             # === QUICK ACTIONS ===
             console.print(f"\n[bold green][ACTION] Quick Actions[/bold green]")
-            console.print("- [cyan]bluearch-aws-tags tags scan[/cyan]                    # Find issues")
-            console.print("- [cyan]bluearch-aws-tags tags apply --interactive[/cyan]     # Fix high-priority resources")
-            console.print("- [cyan]bluearch-aws-tags tags apply --auto[/cyan]            # Apply automation")
-            console.print("- [cyan]bluearch-aws-tags tags lifecycle scan-expired[/cyan] # Check expiring resources")
-            console.print("- [cyan]bluearch-aws-tags tags report compliance[/cyan]      # Generate detailed report")
+            console.print("- [cyan]bluearch-aws-tags lifecycle scan[/cyan]              # Find lifecycle issues")
+            console.print("- [cyan]bluearch-aws-tags lifecycle wizard[/cyan]            # Run the guided workflow")
+            console.print("- [cyan]bluearch-aws-tags lifecycle set-ttl --dry-run[/cyan]  # Preview TTL changes")
+            console.print("- [cyan]bluearch-aws-tags lifecycle scan --expiring 0[/cyan] # Check expired resources")
+            console.print("- [cyan]bluearch-aws-tags policy check-compliance[/cyan]     # Check tag-policy compliance")
             
     except Exception as e:
         safe_print(f"Error generating dashboard: {e}", "red")
@@ -3077,7 +3077,7 @@ def _show_intelligent_next_steps(untagged_resources: List, service_stats: Dict, 
     # Priority-based recommendations
     if high_risk_count > 0:
         console.print(f"[bold red]URGENT:[/bold red] {high_risk_count} high-risk resources need immediate attention!")
-        console.print("   [cyan]bluearch-aws-tags tags apply --interactive[/cyan]  # Tag high-priority resources first")
+        console.print("   [cyan]bluearch-aws-tags lifecycle wizard[/cyan]  # Start the guided workflow")
     
     # Service-specific recommendations
     problem_services = []
@@ -3088,23 +3088,23 @@ def _show_intelligent_next_steps(untagged_resources: List, service_stats: Dict, 
     if problem_services:
         console.print(f"\n[bold yellow]Bulk Tagging Opportunities:[/bold yellow]")
         for service, count in sorted(problem_services, key=lambda x: x[1], reverse=True)[:3]:
-            console.print(f"   [cyan]bluearch-aws-tags tags bulk {service}[/cyan]     # Fix {count} {service.upper()} resources")
+            console.print(f"   [cyan]bluearch-aws-tags lifecycle set-ttl --services {service} --dry-run[/cyan]  # Preview {count} {service.upper()} resources")
     
     # Automation recommendations
     if total_untagged >= 10:
         console.print(f"\n[bold green]Automation Setup:[/bold green]")
-        console.print("   [cyan]bluearch-aws-tags tags rules load config/sample_tagging_rules.json[/cyan]")
-        console.print("   [cyan]bluearch-aws-tags tags apply --auto[/cyan]        # Apply automation rules")
+        console.print("   [cyan]bluearch-aws-tags lifecycle policies create[/cyan]")
+        console.print("   [cyan]bluearch-aws-tags lifecycle set-ttl --dry-run[/cyan]  # Preview policy changes")
     
     # General workflow
     console.print(f"\n[bold magenta]Complete Workflow:[/bold magenta]")
-    console.print("1. [dim]bluearch-aws-tags tags apply --interactive[/dim]  # Start with high-priority resources")
-    console.print("2. [dim]bluearch-aws-tags tags bulk <service>[/dim]       # Bulk tag by service type")
-    console.print("3. [dim]bluearch-aws-tags tags rules[/dim]                 # Set up automation rules")
-    console.print("4. [dim]bluearch-aws-tags tags apply --auto[/dim]          # Apply automated tagging")
-    console.print("5. [dim]bluearch-aws-tags tags report compliance[/dim]     # Monitor progress")
+    console.print("1. [dim]bluearch-aws-tags lifecycle policies create[/dim] # Define resource lifecycle rules")
+    console.print("2. [dim]bluearch-aws-tags lifecycle scan[/dim]            # Find matching resources")
+    console.print("3. [dim]bluearch-aws-tags lifecycle set-ttl --dry-run[/dim] # Preview TTL changes")
+    console.print("4. [dim]bluearch-aws-tags lifecycle review[/dim]          # Monitor expiring resources")
+    console.print("5. [dim]bluearch-aws-tags policy check-compliance[/dim]   # Check organization policy")
     
-    console.print(f"\n[dim]For help with any command: bluearch-aws-tags tags <command> --help[/dim]")
+    console.print("\n[dim]For help: bluearch-aws-tags lifecycle --help[/dim]")
 
 
 # === RULE MANAGEMENT FUNCTIONS ===
@@ -3334,7 +3334,7 @@ def _interactive_rule_creation():
                 json.dump(existing_rules, f, indent=2, default=str)
             
             console.print(f"[green]OK Rule saved to {file_path}[/green]")
-            console.print(f"[dim]Load it with: bluearch-aws-tags tags rules load {file_path}[/dim]")
+            console.print("[dim]Legacy rule files are not loaded by the public CLI. Use: bluearch-aws-tags lifecycle policies create[/dim]")
             
         except Exception as e:
             console.print(f"[red]Error saving rule: {e}[/red]")
@@ -3701,8 +3701,8 @@ def _save_rule_to_file(rule_data):
             json.dump(existing_rules, f, indent=2, default=str)
         
         console.print(f"\n[green]✅ Rule saved to {file_path}[/green]")
-        console.print(f"[dim]Load it with: bluearch-aws-tags tags rules load {file_path}[/dim]")
-        console.print(f"[dim]Test it with: bluearch-aws-tags tags rules enforce --dry-run[/dim]")
+        console.print("[dim]Legacy rule files are not loaded by the public CLI. Use: bluearch-aws-tags lifecycle policies create[/dim]")
+        console.print("[dim]Preview supported policy changes with: bluearch-aws-tags lifecycle set-ttl --dry-run[/dim]")
         
     except Exception as e:
         console.print(f"[red]Error saving rule: {e}[/red]")
@@ -3749,7 +3749,7 @@ def _enforce_rules(auto_approve: bool, dry_run: bool):
                     console.print(f"[yellow]Warning: Could not load {rules_file}: {e}[/yellow]")
         
         if not all_rules:
-            console.print("[red]No tag rules found. Create rules first with: bluearch-aws-tags tags rules create[/red]")
+            console.print("[red]Legacy tag-rule loading is unavailable. Use: bluearch-aws-tags lifecycle policies create[/red]")
             return
         
         # Filter enabled rules
@@ -3757,7 +3757,7 @@ def _enforce_rules(auto_approve: bool, dry_run: bool):
         console.print(f"Found [cyan]{len(enabled_rules)}[/cyan] enabled rules")
         
         if not enabled_rules:
-            console.print("[yellow]No enabled rules found. Enable rules with: bluearch-aws-tags tags rules enable <rule-name>[/yellow]")
+            console.print("[yellow]No supported lifecycle policies found. Use: bluearch-aws-tags lifecycle policies create[/yellow]")
             return
         
         # Get resources to process
@@ -4362,7 +4362,7 @@ def _enforce_rules_via_workers(auto_approve: bool, dry_run: bool):
 
     # Direct enforcement is now the default
     console.print("\n[cyan]Use direct enforcement:[/cyan]")
-    console.print("[cyan]bluearch-aws-tags tags rules enforce[/cyan]")
+    console.print("[cyan]bluearch-aws-tags lifecycle set-ttl --dry-run[/cyan]")
     return
     
     if dry_run:
@@ -4505,8 +4505,8 @@ def _enforce_rules_via_workers(auto_approve: bool, dry_run: bool):
                 if queued_tasks:
                     console.print(f"\n[bold]Monitoring Tasks[/bold]")
                     console.print("[dim]You can monitor task progress with:[/dim]")
-                    console.print("[cyan]bluearch-aws-tags workers status[/cyan]")
-                    console.print("[cyan]bluearch-aws-tags tags report compliance[/cyan]")
+                    console.print("[cyan]bluearch-aws-tags lifecycle review[/cyan]")
+                    console.print("[cyan]bluearch-aws-tags policy check-compliance[/cyan]")
                     
                     # Optionally wait for a few tasks to complete
                     if len(queued_tasks) <= 5 and Confirm.ask("Wait for tasks to complete?", default=False):
@@ -4572,7 +4572,7 @@ def _monitor_enforcement_tasks(queued_tasks: List[Dict], timeout: int = 60):
     
     except Exception as e:
         console.print(f"[yellow]Could not monitor tasks: {e}[/yellow]")
-        console.print("[dim]Check task status with: bluearch-aws-tags workers status[/dim]")
+        console.print("[dim]Review current resource state with: bluearch-aws-tags lifecycle review[/dim]")
 
 # === EXECUTION HISTORY AND ROLLBACK COMMANDS ===
 
@@ -4706,7 +4706,7 @@ def show_execution_history(
                         
                         if can_rollback:
                             console.print(f"[green]This execution can be rolled back[/green]")
-                            console.print(f"[dim]Use: bluearch-aws-tags tags rollback {details}[/dim]")
+                            console.print("[dim]Legacy tagging executions cannot be rolled back through the public CLI.[/dim]")
                         else:
                             console.print(f"[yellow]Cannot rollback: {reason}[/yellow]")
             
@@ -4892,7 +4892,7 @@ def rollback_tag_execution(
                 result = rollback_task.delay(execution_id, current_user, dry_run)
                 console.print(f"[green]Rollback task queued successfully[/green]")
                 console.print(f"[dim]Task ID: {result.id}[/dim]")
-                console.print(f"[dim]Check status with: bluearch-aws-tags workers status[/dim]")
+                console.print("[dim]Review current resource state with: bluearch-aws-tags lifecycle review[/dim]")
                 
             else:
                 # Execute synchronously
