@@ -19,10 +19,6 @@ log() {
   printf '[bluearch] %s\n' "$*"
 }
 
-warn() {
-  printf '[bluearch] warning: %s\n' "$*" >&2
-}
-
 fail() {
   printf '[bluearch] error: %s\n' "$*" >&2
   exit 1
@@ -56,16 +52,25 @@ verify_checksum() {
   local asset_name="$2"
   local selected_file="$3"
 
-  awk -v asset="$asset_name" '$2 == asset { print }' "$checksums_file" > "$selected_file"
-  if [[ ! -s "$selected_file" ]]; then
-    warn "SHA256SUMS did not contain ${asset_name}; continuing without checksum verification"
-    return
+  if ! awk -v asset="$asset_name" '
+    {
+      name = $2
+      sub(/^\*/, "", name)
+      if (name == asset) {
+        print
+        matches += 1
+      }
+    }
+    END { exit(matches == 1 ? 0 : 1) }
+  ' "$checksums_file" > "$selected_file"; then
+    fail "SHA256SUMS must contain exactly one row for ${asset_name}"
   fi
 
-  sha256sum -c "$selected_file"
+  (cd "$(dirname "$checksums_file")" && sha256sum -c "$(basename "$selected_file")") || \
+    fail "Checksum verification failed for ${asset_name}"
 }
 
-install_release() {
+install_release() (
   local app_name="$1"
   local repo="$2"
   local version="$3"
@@ -76,30 +81,45 @@ install_release() {
 
   base_url="$(release_base_url "$repo" "$version")"
   tmp_dir="$(mktemp -d)"
+  trap 'rm -rf "$tmp_dir"' EXIT
 
   log "Downloading ${app_name} (${version})..."
   download_file "${base_url}/${asset_name}" "${tmp_dir}/${asset_name}"
 
-  if download_file "${base_url}/SHA256SUMS" "${tmp_dir}/SHA256SUMS"; then
-    (cd "$tmp_dir" && verify_checksum "SHA256SUMS" "$asset_name" "SHA256SUMS.selected")
-  else
-    warn "Could not download SHA256SUMS; continuing without checksum verification"
-  fi
+  download_file "${base_url}/SHA256SUMS" "${tmp_dir}/SHA256SUMS" || \
+    fail "Could not download required SHA256SUMS"
+  verify_checksum "${tmp_dir}/SHA256SUMS" "$asset_name" "${tmp_dir}/SHA256SUMS.selected"
+
+  local archive_listing
+  archive_listing="$(tar -tzf "${tmp_dir}/${asset_name}")" || fail "Malformed archive: ${asset_name}"
+  local exact_binary_count=0
+  local entry
+  while IFS= read -r entry; do
+    [[ -n "$entry" ]] || continue
+    case "$entry" in
+      /*|../*|*/../*|*/..|*\\*) fail "Unsafe archive path: ${entry}" ;;
+    esac
+    if [[ "$entry" == "$binary_name" ]]; then
+      exact_binary_count=$((exact_binary_count + 1))
+    fi
+  done <<< "$archive_listing"
+  [[ "$exact_binary_count" -eq 1 ]] || \
+    fail "Archive must contain exactly one top-level ${binary_name} executable"
+
+  local entry_types
+  entry_types="$(tar -tvzf "${tmp_dir}/${asset_name}" | awk -v asset="$binary_name" '$NF == asset { print substr($1, 1, 1) }')"
+  [[ "$entry_types" == "-" ]] || fail "Archive entry ${binary_name} must be a regular file"
 
   mkdir -p "${tmp_dir}/extract"
-  tar -xzf "${tmp_dir}/${asset_name}" -C "${tmp_dir}/extract"
+  tar --no-same-owner --no-same-permissions -xzf "${tmp_dir}/${asset_name}" -C "${tmp_dir}/extract"
 
   local extracted_binary="${tmp_dir}/extract/${binary_name}"
-  if [[ ! -f "$extracted_binary" ]]; then
-    extracted_binary="$(find "${tmp_dir}/extract" -type f -name "$binary_name" | head -n 1)"
-  fi
-  [[ -n "${extracted_binary:-}" && -f "$extracted_binary" ]] || fail "Archive did not contain ${binary_name}"
+  [[ -f "$extracted_binary" && ! -L "$extracted_binary" ]] || fail "Archive did not contain a safe ${binary_name}"
 
   mkdir -p "$INSTALL_DIR"
   install -m 0755 "$extracted_binary" "${INSTALL_DIR}/${binary_name}"
-  rm -rf "$tmp_dir"
   log "Installed ${binary_name} to ${INSTALL_DIR}/${binary_name}"
-}
+)
 
 binary_available() {
   command -v "$1" >/dev/null 2>&1 || [[ -x "${INSTALL_DIR}/$1" ]]
@@ -139,7 +159,7 @@ install_release "$APP_NAME" "$REPO" "$VERSION" "$ASSET_NAME" "$BINARY_NAME"
 if ! command -v "$BINARY_NAME" >/dev/null 2>&1; then
   case ":$PATH:" in
     *":$INSTALL_DIR:"*) ;;
-    *) warn "${INSTALL_DIR} is not on PATH. Add it with: export PATH=\"${INSTALL_DIR}:\$PATH\"" ;;
+    *) printf '[bluearch] warning: %s\n' "${INSTALL_DIR} is not on PATH. Add it with: export PATH=\"${INSTALL_DIR}:\$PATH\"" >&2 ;;
   esac
 fi
 

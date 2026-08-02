@@ -485,89 +485,20 @@ def main(
     4. [dim]lifecycle review[/dim]           - Manage expiring resources
     """
     if version_flag:
-        from rich.prompt import Confirm
-
         try:
             if __name__ == "__main__" or not __package__:
                 from tag_manager_cli import __version__
-                from tag_manager_cli.utils.version_checker import get_updates, is_dev_version
+                from tag_manager_cli.utils.version_checker import is_dev_version
             else:
                 from . import __version__
-                from .utils.version_checker import get_updates, is_dev_version
+                from .utils.version_checker import is_dev_version
             version_str = __version__
-        except:
+        except Exception:
             version_str = "development"
 
-        # Detect if this is a dev or prod version
         is_dev = is_dev_version(version_str)
         channel = "development" if is_dev else "production"
-
-        print_safe(f"AWS Tag Manager CLI {version_str} ({channel})")
-
-        # Skip update check for --help to improve performance
-        # Only check for updates when explicitly running --version without other flags
-        import sys
-        skip_update_check = os.environ.get("TAG_MANAGER_SKIP_UPDATE_CHECK", "").lower() in {
-            "1",
-            "true",
-            "yes",
-            "on",
-        }
-        if (
-            not skip_update_check
-            and not os.environ.get("BLUEARCH_CORE_VERSION_PROBE")
-            and not help
-            and '--help' not in sys.argv
-            and '-h' not in sys.argv
-        ):
-            # Check for available updates from the appropriate channel
-            try:
-                # For dev versions, also check prod to see if stable version is available
-                if is_dev:
-                    # First check production updates
-                    prod_updates = get_updates(force_development=False)
-                    if prod_updates:
-                        print_safe(f"\n[yellow]You are running a development build.[/yellow]")
-                        print_safe(f"[green]A stable production version is available: {prod_updates[0]['version']}[/green]")
-                        if Confirm.ask("Would you like to upgrade to the production version?", default=False):
-                            print_safe("\n[blue]Upgrading to production version...[/blue]")
-                            from tag_manager_cli.commands.update_commands import (
-                                perform_homebrew_update,
-                                required_core_version,
-                            )
-
-                            if not perform_homebrew_update(required_core_version(prod_updates[0])):
-                                print_error("Trust-first Homebrew update failed.")
-                            return
-                        print_safe("")  # Add spacing
-
-                    # Then check dev updates
-                    updates = get_updates(force_development=True)
-                else:
-                    # For prod versions, check prod updates
-                    updates = get_updates(force_development=False)
-
-                if updates:
-                    print_safe(f"\n[yellow]Updates available ({channel} channel):[/yellow]")
-                    for update in updates[:3]:  # Show only the latest 3 updates
-                        print_safe(f"  - [green]{update['version']}[/green] - {update['date']}")
-                        if update['message'].strip():
-                            # Clean up the message - remove JSON escaping and extra quotes
-                            message = update['message'].replace('\\n', '\n').strip('"').strip()
-                            if message:
-                                # Split into lines and indent properly
-                                lines = message.split('\n')
-                                for line in lines:
-                                    if line.strip():
-                                        print_safe(f"    {line.strip()}")
-                            print_safe("")  # Add spacing after each update
-                    print_safe(f"\nRun [cyan]bluearch-aws-tags update[/cyan] to update")
-                else:
-                    print_safe("[green]You are up to date![/green]")
-            except Exception as e:
-                # Silently fail on update check - don't break version display
-                pass  # Don't even print the error for performance
-
+        print_safe(f"bluearch-aws-tags {version_str} ({channel})")
         return
 
     _ensure_core_for_command(ctx, help, version_flag)

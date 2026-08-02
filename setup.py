@@ -1,40 +1,8 @@
 """Setup script for AWS Tag Manager CLI."""
 
 from setuptools import setup, find_packages
-import os
-import re
 
-# Get version from __init__.py
-def get_version():
-    try:
-        init_file = os.path.join("tag_manager_cli", "__init__.py")
-        with open(init_file, "r", encoding="utf-8") as f:
-            content = f.read()
-            version_match = re.search(r'__version__\s*=\s*["\']([^"\']*)["\']', content)
-            if version_match:
-                version = version_match.group(1)
-                # Handle LOCAL version for development/CI builds
-                if version == "LOCAL":
-                    return "0.0.0.dev0"
-
-                # Handle git commit hashes (7-character hex strings)
-                if re.match(r'^[a-f0-9]{7}$', version):
-                    return f"0.0.0.dev0+{version}"
-
-                # Handle semantic versions (v1.2.3 or 1.2.3)
-                if version.startswith('v') and re.match(r'^v\d+\.\d+\.\d+', version):
-                    return version[1:]  # Remove 'v' prefix
-
-                # If it looks like a semantic version already, return as-is
-                if re.match(r'^\d+\.\d+\.\d+', version):
-                    return version
-
-                # Fallback: treat as development version
-                return f"0.0.0.dev0+{version}"
-
-    except (FileNotFoundError, AttributeError):
-        pass
-    return "0.0.0.dev0"
+PACKAGE_VERSION = "0.12.4"
 
 # Try to read README.md, fallback to a default description
 try:
@@ -61,7 +29,7 @@ except FileNotFoundError:
 
 setup(
     name="bluearch-aws-tags",
-    version=get_version(),
+    version=PACKAGE_VERSION,
     author="BlueArch",
     author_email="",
     description="AWS Tag Manager CLI for Cost Allocation, Resource Organization, and more",
