@@ -28,7 +28,7 @@ PUBLIC_CORE_VERSION_LINE = re.compile(
 )
 # Release-owned product requirement. Bump this only when Tag Manager starts
 # using a bluearch-core API or behavior that older core versions do not support.
-DEFAULT_MINIMUM_CORE_VERSION = "0.2.6"
+DEFAULT_MINIMUM_CORE_VERSION = "0.2.9"
 MINIMUM_CORE_VERSION = os.environ.get("TAG_MANAGER_MINIMUM_CORE_VERSION", DEFAULT_MINIMUM_CORE_VERSION)
 PROD_CORE_INSTALL_URL = "brew install bluearchio/tap/bluearch-aws-core"
 DEV_CORE_INSTALL_URL = "pipx install -e ../bluearch-aws-core"
@@ -133,7 +133,11 @@ def get_installed_core_version() -> str | None:
     return get_public_core_version(candidate)
 
 
-def get_public_core_version(candidate: str | None) -> str | None:
+def get_public_core_version(
+    candidate: str | None,
+    *,
+    env: dict[str, str] | None = None,
+) -> str | None:
     """Return a version only for an exact public Core identity line."""
     binary = _resolve_core_executable(candidate)
     if not binary:
@@ -144,6 +148,7 @@ def get_public_core_version(candidate: str | None) -> str | None:
             capture_output=True,
             text=True,
             timeout=10,
+            env=env,
         )
     except (OSError, subprocess.SubprocessError):
         return None
