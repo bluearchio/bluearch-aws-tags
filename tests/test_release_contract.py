@@ -19,6 +19,7 @@ DEVELOPMENT_WORKFLOW = ROOT / ".github" / "workflows" / "development-binaries.ym
 PREFLIGHT_WORKFLOW = ROOT / ".github" / "workflows" / "release-preflight.yml"
 QUALITY_WORKFLOW = ROOT / ".github" / "workflows" / "development-quality.yml"
 SCORECARD_WORKFLOW = ROOT / ".github" / "workflows" / "scorecard.yml"
+PYTEST_CONFIG = ROOT / "pytest.ini"
 
 
 def _workflow() -> dict:
@@ -46,6 +47,15 @@ def _named_step(job: dict, name: str) -> tuple[int, dict]:
         if step.get("name") == name:
             return index, step
     raise AssertionError(f"workflow job has no step named {name!r}")
+
+
+def test_default_pytest_collection_excludes_manual_live_aws_script() -> None:
+    config = PYTEST_CONFIG.read_text(encoding="utf-8")
+
+    assert "testpaths =" in config
+    assert "    tag_manager_cli/tests" in config
+    assert "    tests" in config
+    assert "test_cross_account.py" not in config
 
 
 def test_release_graph_verifies_tag_and_main_before_builds() -> None:
@@ -554,7 +564,7 @@ def test_committed_versions_are_bare_and_equal() -> None:
     setup_version = re.search(r'^PACKAGE_VERSION = "([^"]+)"$', setup_text, re.MULTILINE).group(1)
     init_version = re.search(r'^__version__ = "([^"]+)"$', init_text, re.MULTILINE).group(1)
 
-    assert setup_version == init_version == "0.12.5"
+    assert setup_version == init_version == "0.12.6"
     assert re.fullmatch(r"\d+\.\d+\.\d+", init_version)
 
 
@@ -579,7 +589,7 @@ def test_module_version_probe_is_exact_and_stateless(
     )
 
     assert result.returncode == 0
-    assert result.stdout == "bluearch-aws-tags 0.12.5 (production)\n"
+    assert result.stdout == "bluearch-aws-tags 0.12.6 (production)\n"
     assert result.stderr == ""
     assert list(home.iterdir()) == []
 
@@ -607,7 +617,7 @@ def test_installed_public_command_version_is_exact_and_stateless(
     )
 
     assert result.returncode == 0
-    assert result.stdout == "bluearch-aws-tags 0.12.5 (production)\n"
+    assert result.stdout == "bluearch-aws-tags 0.12.6 (production)\n"
     assert result.stderr == ""
     assert list(home.iterdir()) == []
 
@@ -631,10 +641,50 @@ def test_all_build_and_distribution_launchers_use_stateless_entrypoint() -> None
     assert 'ENTRY_IMPORT="${ENTRY_IMPORT:-tag_manager_cli.entrypoint}"' in build_scripts
     assert build_scripts.count('VERSION_HOME="$(mktemp -d)"') == 2
     assert build_scripts.count('[[ ! -e "$VERSION_HOME/.tag-manager" ]]') == 2
+    assert build_scripts.count(
+        'ONEFILE_TEMPDIR="{TEMP}/bluearch-aws-tags_{PID}_{TIME}"'
+    ) == 2
+    assert 'ONEFILE_TEMPDIR="{HOME}/.bluearch-aws-tags/bin"' not in build_scripts
     assert 'HOME="$version_home" "$verify_dir/$BINARY_NAME" --version' in release_text
     assert 'test ! -e "$version_home/.tag-manager"' in release_text
     assert 'HOME="$VERSION_HOME" "$EXPECTED" --version' in verifier
     assert '[[ ! -e "$VERSION_HOME/.tag-manager" ]]' in verifier
+
+
+def test_macos_release_gates_v0125_nuitka_brownfield_handoff_after_signing() -> None:
+    macos = _workflow()["jobs"]["macos"]
+    sign_index, _ = _named_step(
+        macos,
+        "Sign, notarize, and verify final macOS archive",
+    )
+    gate_index, gate = _named_step(
+        macos,
+        "Brownfield smoke-test v0.12.5 Nuitka daemon handoff",
+    )
+    upload_index = next(
+        index
+        for index, step in enumerate(macos["steps"])
+        if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    commands = gate["run"]
+
+    assert sign_index < gate_index < upload_index
+    assert "releases/download/v0.12.5/$BINARY_NAME-macos-arm64.zip" in commands
+    assert "434b1fc0286e09745e66fd85a5a6237b606be7a86ac3a5aa6068b9cd5f1e6c6a" in commands
+    assert 'install -m 0755 "dist/$BINARY_NAME" "$candidate_binary"' in commands
+    assert '("127.0.0.1", 28094)' in commands
+    assert '"BLUEARCH_CORE_URL=http://127.0.0.1:28094"' in commands
+    assert '"TMPDIR=$brownfield_tmp"' in commands
+    assert '[[ "$old_supervisor_pid" != "$old_listener_pid" ]]' in commands
+    assert 'rm -rf "$brownfield_dir/homebrew/Cellar/$BINARY_NAME/0.12.5"' in commands
+    assert 'if kill -0 "$old_supervisor_pid"' in commands
+    assert 'if kill -0 "$old_listener_pid"' in commands
+    assert "bluearch-aws-tags-web-server.identity.json" in commands
+    assert 'identity["argv"][0] == os.environ["EXPECTED_LAUNCHER"]' in commands
+    assert 'expected_dir = re.compile("^" + re.escape(binary)' in commands
+    assert 'runtime.parent.parent.resolve() == Path(os.environ["EXPECTED_TEMP_ROOT"]).resolve()' in commands
+    assert 'env "${runtime_env[@]}" "$candidate_binary" web stop' in commands
+    assert 'test ! -e "$identity_file"' in commands
 
 
 def test_version_setter_accepts_only_v_prefixed_semver(tmp_path: Path) -> None:
