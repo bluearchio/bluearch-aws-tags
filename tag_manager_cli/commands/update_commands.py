@@ -21,6 +21,7 @@ try:
     from ..utils.version_checker import get_updates
     from ..utils.public_executables import (
         PUBLIC_CORE_FORMULA,
+        PUBLIC_TAGS_EXECUTABLE,
         PUBLIC_TAGS_FORMULA,
         probe_public_tags_version,
         public_tags_version_label,
@@ -43,6 +44,7 @@ except ImportError:
     from tag_manager_cli.utils.version_checker import get_updates
     from tag_manager_cli.utils.public_executables import (
         PUBLIC_CORE_FORMULA,
+        PUBLIC_TAGS_EXECUTABLE,
         PUBLIC_TAGS_FORMULA,
         probe_public_tags_version,
         public_tags_version_label,
@@ -189,24 +191,13 @@ def _perform_homebrew_core_update(brew: str, required_core_version: str) -> bool
 
 def _verify_homebrew_core_installation(brew: str, required_core_version: str) -> bool:
     """Verify the exact Core binary installed by the trusted Homebrew formula."""
-    prefix_result = subprocess.run(
-        [brew, "--prefix", PUBLIC_CORE_FORMULA],
-        capture_output=True,
-        text=True,
-        timeout=30,
+    core_binary = _formula_owned_core_binary(brew)
+    if core_binary is None:
+        return False
+    installed_version = get_public_core_version(
+        os.fspath(core_binary),
+        env=_sanitized_core_runtime_env(),
     )
-    if prefix_result.returncode != 0:
-        detail = (prefix_result.stderr or prefix_result.stdout or "unknown error").strip()
-        print_error(f"Could not resolve the Homebrew Core formula prefix: {detail}")
-        return False
-
-    prefix_lines = [line.strip() for line in prefix_result.stdout.splitlines() if line.strip()]
-    if len(prefix_lines) != 1 or not Path(prefix_lines[0]).is_absolute():
-        print_error("Homebrew returned an invalid Core formula prefix.")
-        return False
-
-    core_binary = Path(prefix_lines[0]) / "bin" / PUBLIC_CORE_EXECUTABLE
-    installed_version = get_public_core_version(os.fspath(core_binary))
     if not core_version_satisfies(installed_version, required_core_version):
         actual = installed_version or "invalid public identity"
         print_error(
@@ -217,13 +208,180 @@ def _verify_homebrew_core_installation(brew: str, required_core_version: str) ->
     return True
 
 
+def _formula_owned_core_binary(brew: str) -> Path | None:
+    """Resolve Core only through the exact trusted formula's active prefix."""
+    runtime_env = _sanitized_core_runtime_env()
+    try:
+        prefix_result = subprocess.run(
+            [brew, "--prefix", PUBLIC_CORE_FORMULA],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=runtime_env,
+        )
+        cellar_result = subprocess.run(
+            [brew, "--cellar"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=runtime_env,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print_error(f"Could not resolve the Homebrew Core formula prefix: {exc}")
+        return None
+
+    prefix = _single_absolute_directory(prefix_result)
+    cellar = _single_absolute_directory(cellar_result)
+    if prefix is None or cellar is None:
+        print_error("Homebrew returned an invalid Core formula prefix or Cellar.")
+        return None
+    try:
+        prefix_parts = prefix.relative_to(cellar).parts
+    except ValueError:
+        print_error("Homebrew Core formula prefix is outside the active Cellar.")
+        return None
+    if len(prefix_parts) != 2 or prefix_parts[0] != PUBLIC_CORE_EXECUTABLE:
+        print_error("Homebrew Core formula prefix did not identify bluearch-aws-core.")
+        return None
+
+    resolved = resolve_exact_executable(
+        os.fspath(prefix / "bin" / PUBLIC_CORE_EXECUTABLE),
+        PUBLIC_CORE_EXECUTABLE,
+    )
+    if resolved is None:
+        return None
+    resolved_path = Path(resolved)
+    try:
+        resolved_path.relative_to(prefix)
+    except ValueError:
+        print_error("Homebrew Core binary resolved outside its formula prefix.")
+        return None
+    return resolved_path
+
+
+def _formula_owned_tags_binary(brew: str) -> Path | None:
+    """Resolve Tags only through the exact trusted formula's active prefix."""
+    runtime_env = _sanitized_core_runtime_env()
+    try:
+        prefix_result = subprocess.run(
+            [brew, "--prefix", PUBLIC_TAGS_FORMULA],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=runtime_env,
+        )
+        cellar_result = subprocess.run(
+            [brew, "--cellar"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=runtime_env,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print_error(f"Could not resolve the Homebrew Tags formula prefix: {exc}")
+        return None
+
+    prefix = _single_absolute_directory(prefix_result)
+    cellar = _single_absolute_directory(cellar_result)
+    if prefix is None or cellar is None:
+        print_error("Homebrew returned an invalid Tags formula prefix or Cellar.")
+        return None
+    try:
+        prefix_parts = prefix.relative_to(cellar).parts
+    except ValueError:
+        print_error("Homebrew Tags formula prefix is outside the active Cellar.")
+        return None
+    if len(prefix_parts) != 2 or prefix_parts[0] != PUBLIC_TAGS_EXECUTABLE:
+        print_error("Homebrew Tags formula prefix did not identify bluearch-aws-tags.")
+        return None
+
+    resolved = resolve_exact_executable(
+        os.fspath(prefix / "bin" / PUBLIC_TAGS_EXECUTABLE),
+        PUBLIC_TAGS_EXECUTABLE,
+    )
+    if resolved is None:
+        return None
+    resolved_path = Path(resolved)
+    try:
+        resolved_path.relative_to(prefix)
+    except ValueError:
+        print_error("Homebrew Tags binary resolved outside its formula prefix.")
+        return None
+    return resolved_path
+
+
+def _single_absolute_directory(result: subprocess.CompletedProcess) -> Path | None:
+    if result.returncode != 0:
+        return None
+    lines = [line.strip() for line in (result.stdout or "").splitlines() if line.strip()]
+    if len(lines) != 1:
+        return None
+    candidate = Path(lines[0])
+    if not candidate.is_absolute():
+        return None
+    try:
+        resolved = candidate.resolve(strict=True)
+    except (OSError, RuntimeError):
+        return None
+    return resolved if resolved.is_dir() else None
+
+
+def _sanitized_core_runtime_env() -> dict[str, str]:
+    """Remove local Core overrides before verifying or reconciling formula runtime."""
+    runtime_env = os.environ.copy()
+    for name in (
+        "BLUEARCH_CORE_BINARY",
+        "BLUEARCH_CORE_TAG_MANAGER_CMD",
+        "BLUEARCH_MINIMUM_CORE_VERSION",
+        "TAG_MANAGER_MINIMUM_CORE_VERSION",
+    ):
+        runtime_env.pop(name, None)
+    return runtime_env
+
+
+def _restart_formula_owned_core_runtime(brew: str) -> bool:
+    """Reconcile Core and the Tags dashboard after Homebrew replaces binaries."""
+    try:
+        core_binary = _formula_owned_core_binary(brew)
+        tags_binary = _formula_owned_tags_binary(brew)
+        if core_binary is None or tags_binary is None:
+            return False
+        runtime_env = _sanitized_core_runtime_env()
+        # Core must restart the formula that was just upgraded, even when a
+        # stale curl install appears earlier on PATH or was inherited through
+        # an explicit local override.
+        runtime_env["BLUEARCH_CORE_TAG_MANAGER_CMD"] = os.fspath(tags_binary)
+        result = subprocess.run(
+            [
+                os.fspath(core_binary),
+                "start",
+                "--daemon",
+                "--web-apps",
+                PUBLIC_TAGS_EXECUTABLE,
+            ],
+            capture_output=False,
+            text=True,
+            timeout=300,
+            env=runtime_env,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        print_error(f"bluearch-aws-core runtime restart failed: {exc}")
+        return False
+    if result.returncode != 0:
+        print_error("bluearch-aws-core could not reconcile the updated runtime.")
+        return False
+    return True
+
+
 def perform_homebrew_core_update(required_core_version: str) -> bool:
     """Trust, then install or upgrade Core through canonical Homebrew."""
     brew = _prepare_homebrew((PUBLIC_CORE_FORMULA,))
     if brew is None:
         return False
     try:
-        return _perform_homebrew_core_update(brew, required_core_version)
+        if not _perform_homebrew_core_update(brew, required_core_version):
+            return False
+        return _restart_formula_owned_core_runtime(brew)
     except (OSError, subprocess.SubprocessError) as exc:
         print_error(f"bluearch-aws-core Homebrew update failed: {exc}")
         return False
@@ -258,7 +416,9 @@ def perform_homebrew_update(required_core_version: str) -> bool:
             text=True,
             timeout=300,
         )
-        return result.returncode == 0
+        if result.returncode != 0:
+            return False
+        return _restart_formula_owned_core_runtime(brew)
     except (OSError, subprocess.SubprocessError) as exc:
         print_error(f"Homebrew update failed: {exc}")
         return False
@@ -293,6 +453,8 @@ def homebrew_update_remediation() -> str:
             f"brew trust --formula {PUBLIC_CORE_FORMULA}",
             f"brew trust --formula {PUBLIC_TAGS_FORMULA}",
             f"brew upgrade {PUBLIC_CORE_FORMULA} {PUBLIC_TAGS_FORMULA}",
+            f"$(brew --prefix {PUBLIC_CORE_FORMULA})/bin/{PUBLIC_CORE_EXECUTABLE} "
+            f"start --daemon --web-apps {PUBLIC_TAGS_EXECUTABLE}",
         )
     )
 

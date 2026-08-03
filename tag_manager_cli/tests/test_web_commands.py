@@ -10,8 +10,9 @@ from tag_manager_cli.commands import web_commands as web
 
 
 class _FakeProcess:
-    def __init__(self, running_states=(True, False)):
+    def __init__(self, running_states=(True, False), *, stop_on_terminate=False):
         self._running_states = list(running_states)
+        self._stop_on_terminate = stop_on_terminate
         self.terminate_calls = 0
         self.kill_calls = 0
 
@@ -22,30 +23,131 @@ class _FakeProcess:
 
     def terminate(self):
         self.terminate_calls += 1
+        if self._stop_on_terminate:
+            self._running_states = [False]
 
     def kill(self):
         self.kill_calls += 1
 
 
-def _snapshot(pid, process, argv, executable, create_time=1.0):
+class _FakePopen:
+    def __init__(self, pid=41001, *, timeout_once=False):
+        self.pid = pid
+        self.returncode = None
+        self.timeout_once = timeout_once
+        self.calls = []
+
+    def poll(self):
+        return self.returncode
+
+    def terminate(self):
+        self.calls.append(("terminate", None))
+
+    def kill(self):
+        self.calls.append(("kill", None))
+
+    def wait(self, timeout=None):
+        self.calls.append(("wait", timeout))
+        if self.timeout_once:
+            self.timeout_once = False
+            raise subprocess.TimeoutExpired("bluearch-aws-tags", timeout)
+        self.returncode = 0
+        return 0
+
+
+def _snapshot(pid, process, argv, executable, create_time=1.0, uid=None, ppid=None):
+    uid = os.getuid() if uid is None and hasattr(os, "getuid") else uid
     if hasattr(process, "__dict__"):
         process.pid = pid
         process.create_time = lambda: create_time
         process.cmdline = lambda: list(argv)
         process.exe = lambda: executable
+        process.uids = lambda: SimpleNamespace(real=uid)
+        process.ppid = lambda: ppid
     return SimpleNamespace(
         pid=pid,
         process=process,
         create_time=create_time,
         argv=tuple(argv),
         executable=executable,
+        uid=uid,
+        ppid=ppid,
     )
+
+
+def _packaged_daemon_argv(launcher, port=8096):
+    return (
+        os.fspath(launcher),
+        "web",
+        "start",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        str(port),
+        "--log-level",
+        "info",
+        "--no-browser",
+    )
+
+
+def _configure_daemon_spawn(monkeypatch, tmp_path, process):
+    log_path = tmp_path / "web.log"
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "_build_daemon_cmd", lambda *_args: ["bluearch-aws-tags"])
+    monkeypatch.setattr(web, "_rotate_logs", lambda: log_path)
+    monkeypatch.setattr(web, "_daemon_cwd", lambda: os.fspath(tmp_path))
+    monkeypatch.setattr(web, "_daemon_child_env", lambda: {})
+    monkeypatch.setattr(web.subprocess, "Popen", lambda *_args, **_kwargs: process)
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: set())
+    return log_path
 
 
 def test_runtime_pid_and_log_files_are_public_product_specific():
     assert web.PID_FILE.name == "bluearch-aws-tags-web-server.pid"
+    assert web.PROCESS_IDENTITY_FILE.name == "bluearch-aws-tags-web-server.identity.json"
     assert web.LOG_FILE.name == "bluearch-aws-tags-web-server.log"
     assert web.PID_FILE.name != "web-server.pid"
+
+
+def test_process_exists_treats_permission_denied_as_live(monkeypatch):
+    monkeypatch.setattr(
+        web.os,
+        "kill",
+        lambda *_args: (_ for _ in ()).throw(PermissionError()),
+    )
+
+    assert web._process_exists(41001) is True
+
+
+def test_write_pid_persists_private_versioned_process_identity(monkeypatch, tmp_path):
+    executable = tmp_path / "bluearch-aws-tags"
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    process = _FakeProcess(running_states=(True,))
+    snapshot = _snapshot(
+        41001,
+        process,
+        [os.fspath(executable), "web", "start", "--no-browser"],
+        os.fspath(executable),
+        create_time=123.5,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+
+    web._write_pid(41001, snapshot=snapshot)
+
+    identity = web._read_process_identity()
+    assert web.PID_FILE.read_text() == "41001"
+    assert identity is not None
+    assert identity.schema_version == 1
+    assert identity.product == "io.bluearch.aws.tags.web"
+    assert identity.pid == 41001
+    assert identity.create_time == 123.5
+    assert identity.argv == snapshot.argv
+    assert identity.executable == os.fspath(executable)
+    assert identity.uid == snapshot.uid
+    assert web.PROCESS_IDENTITY_FILE.stat().st_mode & 0o077 == 0
 
 
 def test_terminate_refuses_process_that_execs_after_snapshot(monkeypatch):
@@ -61,6 +163,68 @@ def test_terminate_refuses_process_that_execs_after_snapshot(monkeypatch):
 
     assert web._terminate_process(41001, expected_snapshot=snapshot) is False
     assert process.terminate_calls == 0
+    assert process.kill_calls == 0
+
+
+def test_terminate_refuses_process_whose_uid_changes_after_snapshot(monkeypatch):
+    process = _FakeProcess(running_states=(True,))
+    snapshot = _snapshot(
+        41001,
+        process,
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+    )
+    process.uids = lambda: SimpleNamespace(real=(snapshot.uid or 0) + 1)
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+
+    assert web._terminate_process(41001, expected_snapshot=snapshot) is False
+    assert process.terminate_calls == 0
+    assert process.kill_calls == 0
+
+
+def test_terminate_recaptures_pid_identity_immediately_before_signal(monkeypatch):
+    original_process = _FakeProcess(running_states=(True,))
+    reused_process = _FakeProcess(running_states=(True,))
+    original = _snapshot(
+        41001,
+        original_process,
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+        create_time=1.0,
+    )
+    reused = _snapshot(
+        41001,
+        reused_process,
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+        create_time=2.0,
+    )
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: reused)
+
+    assert web._terminate_process(41001, expected_snapshot=original) is False
+    assert original_process.terminate_calls == 0
+    assert reused_process.terminate_calls == 0
+
+
+def test_terminate_recaptures_pid_identity_immediately_before_kill(monkeypatch):
+    process = _FakeProcess(running_states=(True,))
+    snapshot = _snapshot(
+        41001,
+        process,
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+    )
+    recaptures = iter((True, False))
+    monkeypatch.setattr(web, "_snapshot_is_current", lambda _snapshot: True)
+    monkeypatch.setattr(
+        web,
+        "_recaptured_snapshot_matches",
+        lambda _snapshot: next(recaptures),
+    )
+    monkeypatch.setattr(web.time, "sleep", lambda _seconds: None)
+
+    assert web._terminate_process(41001, expected_snapshot=snapshot) is False
+    assert process.terminate_calls == 1
     assert process.kill_calls == 0
 
 
@@ -268,6 +432,7 @@ def test_port_cleanup_signals_only_public_tags_process(monkeypatch, tmp_path):
     public_executable.write_text("#!/bin/sh\nexit 0\n")
     public_executable.chmod(0o755)
     processes = {pid: _FakeProcess() for pid in range(41001, 41006)}
+    processes[41001] = _FakeProcess(running_states=([True] * 5) + [False])
     snapshots = {
         41001: _snapshot(
             41001,
@@ -284,6 +449,8 @@ def test_port_cleanup_signals_only_public_tags_process(monkeypatch, tmp_path):
     monkeypatch.setattr(web, "_listener_pids", lambda _port: set(snapshots))
     monkeypatch.setattr(web, "_process_exists", lambda _pid: True)
     monkeypatch.setattr(web, "_capture_process_snapshot", snapshots.get)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(public_executable))
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
     monkeypatch.setattr(web.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(web, "_remove_stale_pid_files", lambda: None)
 
@@ -319,37 +486,879 @@ def test_port_cleanup_revalidates_process_identity_before_signaling(monkeypatch)
     assert process.kill_calls == 0
 
 
-def test_stop_revalidates_process_identity_before_signaling(monkeypatch):
-    """The PID-file process cannot change identity between status and stop."""
-    original_process = _FakeProcess()
-    reused_process = _FakeProcess()
-    snapshots = iter(
-        (
-            _snapshot(
-                41001,
-                original_process,
-                ["/opt/homebrew/bin/bluearch-aws-tags", "web", "start"],
-                "/opt/homebrew/bin/bluearch-aws-tags",
-                create_time=1.0,
-            ),
-            _snapshot(
-                41001,
-                reused_process,
-                ["/usr/bin/python3", "unrelated_worker.py"],
-                "/usr/bin/python3",
-                create_time=2.0,
-            ),
-        )
+def test_identity_record_survives_deleted_cellar_executable(monkeypatch, tmp_path):
+    old_executable = (
+        tmp_path
+        / "homebrew"
+        / "Cellar"
+        / "bluearch-aws-tags"
+        / "0.12.5"
+        / "bin"
+        / "bluearch-aws-tags"
     )
-    monkeypatch.setattr(web, "_read_pid", lambda: 41001)
-    monkeypatch.setattr(web, "_process_exists", lambda _pid: True)
-    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: next(snapshots))
+    old_executable.parent.mkdir(parents=True)
+    old_executable.write_text("#!/bin/sh\n")
+    old_executable.chmod(0o755)
+    process = _FakeProcess(running_states=([True] * 5) + [False])
+    snapshot = _snapshot(
+        41001,
+        process,
+        [os.fspath(old_executable), "web", "start", "--no-browser"],
+        os.fspath(old_executable),
+        create_time=123.5,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    web._write_process_identity(snapshot)
+    old_executable.unlink()
+
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41001})
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+    monkeypatch.setattr(web, "_remove_stale_pid_files", lambda: None)
+    monkeypatch.setattr(web.time, "sleep", lambda _seconds: None)
+
+    web._stop_known_web_servers(8096)
+
+    identity = web._read_process_identity()
+    assert identity is not None
+    assert identity.pid == 41001
+    assert identity.create_time == 123.5
+    assert identity.argv == snapshot.argv
+    assert identity.executable == os.fspath(old_executable)
+    assert process.terminate_calls == 1
+    assert process.kill_calls == 0
+
+
+def test_core_managed_start_migrates_numeric_supervisor_to_nuitka_listener(
+    monkeypatch,
+    tmp_path,
+):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    nuitka_runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    nuitka_runtime.parent.mkdir(parents=True)
+    nuitka_runtime.write_text("#!/bin/sh\n")
+    nuitka_runtime.chmod(0o755)
+    argv = _packaged_daemon_argv(old_executable)
+    supervisor_process = _FakeProcess(running_states=(True,))
+    listener_process = _FakeProcess(running_states=(True,))
+    supervisor = _snapshot(
+        41001,
+        supervisor_process,
+        argv,
+        os.fspath(old_executable),
+        create_time=123.5,
+        ppid=1,
+    )
+    listener = _snapshot(
+        41002,
+        listener_process,
+        argv,
+        os.fspath(nuitka_runtime),
+        create_time=124.0,
+        ppid=41001,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+
+    snapshots = {41001: supervisor, 41002: listener}
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41002})
+    monkeypatch.setattr(web, "_capture_process_snapshot", snapshots.get)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_probe_tags_health", lambda port: port == 8096)
+
+    managed = web._migrate_numeric_pid_snapshot(
+        supervisor,
+        target_port=8096,
+        listener_pids={41002},
+    )
+
+    assert managed is not None
+    assert managed.snapshot is listener
+    assert managed.supervisor is supervisor
+    assert web.PID_FILE.read_text() == "41002"
+    identity = web._read_process_identity()
+    assert identity is not None
+    assert identity.pid == 41002
+    assert identity.create_time == 124.0
+    assert identity.executable == os.fspath(nuitka_runtime)
+
+
+def test_migrated_nuitka_runtime_stops_listener_and_supervisor(monkeypatch, tmp_path):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    nuitka_runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    argv = _packaged_daemon_argv(old_executable)
+    supervisor_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    listener_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    supervisor = _snapshot(
+        41001,
+        supervisor_process,
+        argv,
+        os.fspath(old_executable),
+        ppid=1,
+    )
+    listener = _snapshot(
+        41002,
+        listener_process,
+        argv,
+        os.fspath(nuitka_runtime),
+        ppid=41001,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    snapshots = {41001: supervisor, 41002: listener}
+    monkeypatch.setattr(web, "_capture_process_snapshot", snapshots.get)
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41002})
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
+    monkeypatch.setattr(web, "_remove_stale_pid_files", lambda: None)
+
+    web._stop_known_web_servers(8096)
+
+    assert listener_process.terminate_calls == 1
+    assert supervisor_process.terminate_calls == 1
+    assert listener_process.kill_calls == 0
+    assert supervisor_process.kill_calls == 0
+
+
+def test_numeric_pid_migration_accepts_nuitka_exec_same_pid(monkeypatch, tmp_path):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    nuitka_runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    process = _FakeProcess(running_states=(True,))
+    listener = _snapshot(
+        41001,
+        process,
+        _packaged_daemon_argv(old_executable),
+        os.fspath(nuitka_runtime),
+        ppid=1,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: listener)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
+
+    managed = web._migrate_numeric_pid_snapshot(
+        listener,
+        target_port=8096,
+        listener_pids={41001},
+    )
+
+    assert managed is not None
+    assert managed.snapshot is listener
+    assert managed.supervisor is None
+    assert web._read_process_identity().executable == os.fspath(nuitka_runtime)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("wrong-parent", "wrong-uid", "wrong-argv", "wrong-executable", "unhealthy"),
+)
+def test_numeric_pid_migration_rejects_unverified_nuitka_child(
+    monkeypatch,
+    tmp_path,
+    mutation,
+):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    nuitka_runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    argv = _packaged_daemon_argv(old_executable)
+    child_argv = (
+        _packaged_daemon_argv(old_executable, 8095)
+        if mutation == "wrong-argv"
+        else argv
+    )
+    child_uid = (os.getuid() + 1) if mutation == "wrong-uid" else os.getuid()
+    child_ppid = 49999 if mutation == "wrong-parent" else 41001
+    child_executable = (
+        tmp_path / "unrelated" / "bluearch-aws-tags.bin"
+        if mutation == "wrong-executable"
+        else nuitka_runtime
+    )
+    supervisor = _snapshot(
+        41001,
+        _FakeProcess(running_states=(True,)),
+        argv,
+        os.fspath(old_executable),
+        ppid=1,
+    )
+    child = _snapshot(
+        41002,
+        _FakeProcess(running_states=(True,)),
+        child_argv,
+        os.fspath(child_executable),
+        uid=child_uid,
+        ppid=child_ppid,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    snapshots = {41001: supervisor, 41002: child}
+    monkeypatch.setattr(web, "_capture_process_snapshot", snapshots.get)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: mutation != "unhealthy")
+
+    managed = web._migrate_numeric_pid_snapshot(
+        supervisor,
+        target_port=8096,
+        listener_pids={41002},
+    )
+
+    assert managed is None
+    assert web.PID_FILE.read_text() == "41001"
+    assert not web.PROCESS_IDENTITY_FILE.exists()
+    assert child.process.terminate_calls == 0
+    assert supervisor.process.terminate_calls == 0
+
+
+def test_current_nuitka_listener_persists_identity_record(monkeypatch, tmp_path):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    runtime_tmp = tmp_path / "runtime-tmp"
+    nuitka_runtime = (
+        runtime_tmp
+        / "bluearch-aws-tags_41001_1234567890_123456"
+        / "bluearch-aws-tags.bin"
+    )
+    nuitka_runtime.parent.mkdir(parents=True)
+    nuitka_runtime.write_text("#!/bin/sh\n")
+    nuitka_runtime.chmod(0o755)
+    listener = _snapshot(
+        41002,
+        _FakeProcess(running_states=(True,)),
+        _packaged_daemon_argv(current_executable),
+        os.fspath(nuitka_runtime),
+        ppid=41001,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_temp_root", lambda: runtime_tmp.resolve())
     monkeypatch.setattr(
         web,
         "resolve_public_tags_executable",
-        lambda _candidate: "/opt/homebrew/bin/bluearch-aws-tags",
+        lambda candidate: os.fspath(current_executable)
+        if candidate == os.fspath(current_executable)
+        else None,
     )
-    monkeypatch.setattr(web, "_remove_pid", lambda: None)
+
+    web._write_pid(41002, snapshot=listener)
+
+    identity = web._read_process_identity()
+    assert identity is not None
+    assert identity.pid == 41002
+    assert identity.executable == os.fspath(nuitka_runtime)
+
+
+@pytest.mark.parametrize(
+    "runtime_directory",
+    (
+        "bluearch-aws-tags_49999_1234567890_123456",
+        "bluearch-aws-tags_41001_not-a-time_123456",
+        "bluearch-aws-tags-41001-1234567890-123456",
+        "bluearch-aws-tags_41001_1234567890_1000000",
+        "bluearch-aws-tags_41001_1234567890_123456_extra",
+    ),
+)
+def test_current_nuitka_listener_rejects_unexpected_unique_temp_pattern(
+    monkeypatch,
+    tmp_path,
+    runtime_directory,
+):
+    launcher = (
+        tmp_path
+        / "homebrew"
+        / "Cellar"
+        / "bluearch-aws-tags"
+        / "0.12.6"
+        / "bin"
+        / "bluearch-aws-tags"
+    )
+    runtime_tmp = tmp_path / "runtime-tmp"
+    runtime = runtime_tmp / runtime_directory / "bluearch-aws-tags.bin"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("#!/bin/sh\n")
+    listener = _snapshot(
+        41002,
+        _FakeProcess(running_states=(True,)),
+        _packaged_daemon_argv(launcher),
+        os.fspath(runtime),
+        ppid=41001,
+    )
+    monkeypatch.setattr(web, "_runtime_temp_root", lambda: runtime_tmp.resolve())
+
+    assert web._is_expected_nuitka_runtime_executable(listener) is False
+
+
+def test_current_nuitka_listener_rejects_symlink_runtime(monkeypatch, tmp_path):
+    launcher = (
+        tmp_path
+        / "homebrew"
+        / "Cellar"
+        / "bluearch-aws-tags"
+        / "0.12.6"
+        / "bin"
+        / "bluearch-aws-tags"
+    )
+    runtime_tmp = tmp_path / "runtime-tmp"
+    runtime = (
+        runtime_tmp
+        / "bluearch-aws-tags_41001_1234567890_123456"
+        / "bluearch-aws-tags.bin"
+    )
+    target = tmp_path / "foreign.bin"
+    target.write_text("foreign")
+    runtime.parent.mkdir(parents=True)
+    runtime.symlink_to(target)
+    listener = _snapshot(
+        41002,
+        _FakeProcess(running_states=(True,)),
+        _packaged_daemon_argv(launcher),
+        os.fspath(runtime),
+        ppid=41001,
+    )
+    monkeypatch.setattr(web, "_runtime_temp_root", lambda: runtime_tmp.resolve())
+
+    assert web._is_expected_nuitka_runtime_executable(listener) is False
+
+
+def test_spawned_nuitka_supervisor_resolves_exact_listener_child(monkeypatch, tmp_path):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    runtime_tmp = tmp_path / "runtime-tmp"
+    nuitka_runtime = (
+        runtime_tmp
+        / "bluearch-aws-tags_41001_1234567890_123456"
+        / "bluearch-aws-tags.bin"
+    )
+    nuitka_runtime.parent.mkdir(parents=True)
+    nuitka_runtime.write_text("#!/bin/sh\n")
+    nuitka_runtime.chmod(0o755)
+    argv = _packaged_daemon_argv(current_executable)
+    supervisor = _snapshot(
+        41001,
+        _FakeProcess(running_states=(True,)),
+        argv,
+        os.fspath(current_executable),
+        ppid=1,
+    )
+    listener = _snapshot(
+        41002,
+        _FakeProcess(running_states=(True,)),
+        argv,
+        os.fspath(nuitka_runtime),
+        ppid=41001,
+    )
+    snapshots = {41001: supervisor, 41002: listener}
+    monkeypatch.setattr(web, "_capture_process_snapshot", snapshots.get)
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41002})
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_temp_root", lambda: runtime_tmp.resolve())
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
+    monkeypatch.setattr(
+        web,
+        "resolve_public_tags_executable",
+        lambda candidate: os.fspath(current_executable)
+        if candidate == os.fspath(current_executable)
+        else None,
+    )
+
+    managed = web._resolve_spawned_daemon_runtime(supervisor, 8096)
+
+    assert managed is not None
+    assert managed.snapshot is listener
+    assert managed.supervisor is supervisor
+
+
+def test_spawn_failure_without_snapshot_reaps_exact_popen_child(monkeypatch, tmp_path):
+    process = _FakePopen()
+    _configure_daemon_spawn(monkeypatch, tmp_path, process)
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: None)
+
+    with pytest.raises(typer.Exit):
+        web._start_daemon("127.0.0.1", 8096, "info")
+
+    assert process.calls == [
+        ("terminate", None),
+        ("wait", web.SPAWNED_SUPERVISOR_GRACE_SECONDS),
+    ]
+
+
+def test_readiness_failure_reaps_spawned_runtime(monkeypatch, tmp_path):
+    process = _FakePopen()
+    _configure_daemon_spawn(monkeypatch, tmp_path, process)
+    snapshot = _snapshot(
+        process.pid,
+        _FakeProcess(running_states=(True,)),
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+    )
+    cleanup = []
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+    monkeypatch.setattr(web, "_is_tags_web_process_snapshot", lambda _snapshot: True)
+    monkeypatch.setattr(
+        web,
+        "_wait_for_daemon_ready",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(typer.Exit(1)),
+    )
+    monkeypatch.setattr(
+        web,
+        "_terminate_spawned_daemon",
+        lambda *args, **kwargs: cleanup.append((args, kwargs)) or True,
+    )
+
+    with pytest.raises(typer.Exit):
+        web._start_daemon("127.0.0.1", 8096, "info")
+
+    assert cleanup == [
+        (
+            (process,),
+            {
+                "expected_snapshot": snapshot,
+                "managed": None,
+                "port": 8096,
+                "expected_argv": ("bluearch-aws-tags",),
+                "expected_uid": os.getuid() if hasattr(os, "getuid") else None,
+            },
+        )
+    ]
+
+
+def test_listener_resolution_failure_reaps_spawned_runtime(monkeypatch, tmp_path):
+    process = _FakePopen()
+    _configure_daemon_spawn(monkeypatch, tmp_path, process)
+    snapshot = _snapshot(
+        process.pid,
+        _FakeProcess(running_states=(True,)),
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+    )
+    cleanup = []
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+    monkeypatch.setattr(web, "_is_tags_web_process_snapshot", lambda _snapshot: True)
+    monkeypatch.setattr(web, "_wait_for_daemon_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(web, "_resolve_spawned_daemon_runtime", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        web,
+        "_terminate_spawned_daemon",
+        lambda *args, **kwargs: cleanup.append((args, kwargs)) or True,
+    )
+
+    with pytest.raises(typer.Exit):
+        web._start_daemon("127.0.0.1", 8096, "info")
+
+    assert cleanup[0][1] == {
+        "expected_snapshot": snapshot,
+        "managed": None,
+        "port": 8096,
+        "expected_argv": ("bluearch-aws-tags",),
+        "expected_uid": os.getuid() if hasattr(os, "getuid") else None,
+    }
+
+
+def test_identity_persistence_failure_reaps_listener_and_supervisor(
+    monkeypatch,
+    tmp_path,
+):
+    process = _FakePopen()
+    _configure_daemon_spawn(monkeypatch, tmp_path, process)
+    supervisor = _snapshot(
+        process.pid,
+        _FakeProcess(running_states=(True,)),
+        ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
+        "/usr/bin/python3",
+    )
+    listener = _snapshot(
+        process.pid + 1,
+        _FakeProcess(running_states=(True,)),
+        supervisor.argv,
+        "/tmp/bluearch-aws-tags.bin",
+        ppid=process.pid,
+    )
+    managed = web._ManagedRuntime(
+        snapshot=listener,
+        identity=None,
+        supervisor=supervisor,
+    )
+    cleanup = []
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: supervisor)
+    monkeypatch.setattr(web, "_is_tags_web_process_snapshot", lambda _snapshot: True)
+    monkeypatch.setattr(web, "_wait_for_daemon_ready", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(web, "_resolve_spawned_daemon_runtime", lambda *_args, **_kwargs: managed)
+    monkeypatch.setattr(
+        web,
+        "_write_pid",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    monkeypatch.setattr(
+        web,
+        "_terminate_spawned_daemon",
+        lambda *args, **kwargs: cleanup.append((args, kwargs)) or True,
+    )
+
+    with pytest.raises(typer.Exit):
+        web._start_daemon("127.0.0.1", 8096, "info")
+
+    assert cleanup[0][1] == {
+        "expected_snapshot": supervisor,
+        "managed": managed,
+        "port": 8096,
+        "expected_argv": ("bluearch-aws-tags",),
+        "expected_uid": os.getuid() if hasattr(os, "getuid") else None,
+    }
+
+
+def test_spawn_cleanup_is_listener_first_and_gives_supervisor_more_than_five_seconds(
+    monkeypatch,
+):
+    process = _FakePopen(timeout_once=True)
+    supervisor = SimpleNamespace(pid=process.pid)
+    listener = SimpleNamespace(pid=process.pid + 1)
+    managed = web._ManagedRuntime(
+        snapshot=listener,
+        identity=None,
+        supervisor=supervisor,
+    )
+    calls = []
+    monkeypatch.setattr(
+        web,
+        "_terminate_process",
+        lambda pid, **kwargs: calls.append(("listener", pid, kwargs)) or True,
+    )
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: set())
+
+    assert web._terminate_spawned_daemon(
+        process,
+        expected_snapshot=supervisor,
+        managed=managed,
+        port=8096,
+        expected_argv=("bluearch-aws-tags",),
+        expected_uid=os.getuid() if hasattr(os, "getuid") else None,
+    ) is True
+
+    assert calls[0][0:2] == ("listener", listener.pid)
+    assert process.calls == [
+        ("terminate", None),
+        ("wait", web.SPAWNED_SUPERVISOR_GRACE_SECONDS),
+        ("kill", None),
+        ("wait", web.SPAWNED_SUPERVISOR_KILL_TIMEOUT_SECONDS),
+    ]
+    assert web.SPAWNED_SUPERVISOR_GRACE_SECONDS > 5.0
+
+
+def test_spawn_cleanup_recovers_exact_orphan_listener_after_supervisor_exits(
+    monkeypatch,
+    tmp_path,
+):
+    supervisor_pid = 41001
+    listener_pid = 41002
+    launcher = (
+        tmp_path
+        / "homebrew"
+        / "Cellar"
+        / "bluearch-aws-tags"
+        / "0.12.6"
+        / "bin"
+        / "bluearch-aws-tags"
+    )
+    launcher.parent.mkdir(parents=True)
+    launcher.write_text("#!/bin/sh\n")
+    launcher.chmod(0o755)
+    runtime_root = tmp_path / "runtime-tmp"
+    runtime = (
+        runtime_root
+        / f"bluearch-aws-tags_{supervisor_pid}_1234567890_123456"
+        / "bluearch-aws-tags.bin"
+    )
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("#!/bin/sh\n")
+    runtime.chmod(0o755)
+    argv = _packaged_daemon_argv(launcher)
+    listener = _snapshot(
+        listener_pid,
+        _FakeProcess(running_states=(True,)),
+        argv,
+        os.fspath(runtime),
+        ppid=1,
+    )
+    process = _FakePopen(pid=supervisor_pid)
+    process.returncode = 0
+    signals = []
+    listeners = {listener_pid}
+
+    def terminate_listener(pid, **kwargs):
+        signals.append((pid, kwargs))
+        listeners.discard(pid)
+        return True
+
+    monkeypatch.setattr(web, "_runtime_temp_root", lambda: runtime_root.resolve())
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: set(listeners))
+    monkeypatch.setattr(
+        web,
+        "_capture_process_snapshot",
+        lambda pid: listener if pid == listener_pid else None,
+    )
+    monkeypatch.setattr(
+        web,
+        "_terminate_process",
+        terminate_listener,
+    )
+
+    assert web._terminate_spawned_daemon(
+        process,
+        expected_snapshot=None,
+        managed=None,
+        port=8096,
+        expected_argv=argv,
+        expected_uid=os.getuid(),
+    ) is True
+
+    assert [pid for pid, _kwargs in signals] == [listener_pid]
+    assert signals[0][1]["expected_identity"].pid == listener_pid
+    assert process.calls == []
+
+
+def test_exited_supervisor_with_unverified_listener_is_not_reported_as_clean(
+    monkeypatch,
+):
+    process = _FakePopen(pid=41001)
+    process.returncode = 1
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41099})
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: None)
+
+    assert web._terminate_spawned_daemon(
+        process,
+        expected_snapshot=None,
+        managed=None,
+        port=8096,
+        expected_argv=("bluearch-aws-tags",),
+        expected_uid=os.getuid() if hasattr(os, "getuid") else None,
+    ) is False
+    assert process.calls == []
+
+
+def test_supervisor_signal_error_with_unverified_listener_is_not_reported_as_clean(
+    monkeypatch,
+):
+    process = _FakePopen(pid=41001)
+
+    def failed_terminate():
+        process.returncode = 1
+        raise OSError("process exited during signal")
+
+    process.terminate = failed_terminate
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41099})
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: None)
+
+    assert web._terminate_spawned_daemon(
+        process,
+        expected_snapshot=None,
+        managed=None,
+        port=8096,
+        expected_argv=("bluearch-aws-tags",),
+        expected_uid=os.getuid() if hasattr(os, "getuid") else None,
+    ) is False
+
+
+def test_identity_record_blocks_same_name_pid_reuse(monkeypatch, tmp_path):
+    executable = tmp_path / "bluearch-aws-tags"
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    original = _snapshot(
+        41001,
+        _FakeProcess(),
+        [os.fspath(executable), "web", "start"],
+        os.fspath(executable),
+        create_time=1.0,
+    )
+    reused_process = _FakeProcess(running_states=(True,))
+    reused = _snapshot(
+        41001,
+        reused_process,
+        [os.fspath(executable), "web", "start"],
+        os.fspath(executable),
+        create_time=2.0,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    web._write_process_identity(original)
+
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41001})
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: reused)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(executable))
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
+
+    web._stop_known_web_servers(8096)
+
+    assert reused_process.terminate_calls == 0
+    assert reused_process.kill_calls == 0
+    assert web.PID_FILE.read_text() == "41001"
+    assert web.PROCESS_IDENTITY_FILE.exists()
+
+
+def test_malformed_identity_is_preserved_without_signaling_foreign_pid(monkeypatch, tmp_path):
+    foreign_executable = tmp_path / "bluearch-aws-tags"
+    foreign_executable.write_text("#!/bin/sh\n")
+    foreign_executable.chmod(0o755)
+    process = _FakeProcess(running_states=(True,))
+    snapshot = _snapshot(
+        41001,
+        process,
+        [os.fspath(foreign_executable), "web", "start"],
+        os.fspath(foreign_executable),
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web.PROCESS_IDENTITY_FILE.write_text("{malformed")
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+
+    assert web._is_server_running() == (False, None)
+    assert web.PROCESS_IDENTITY_FILE.read_text() == "{malformed"
+    assert process.terminate_calls == 0
+
+    with pytest.raises(typer.Exit) as exc_info:
+        web.stop()
+
+    assert exc_info.value.exit_code == 1
+    assert web.PROCESS_IDENTITY_FILE.read_text() == "{malformed"
+
+
+def test_malformed_identity_never_downgrades_to_numeric_pid_migration(monkeypatch, tmp_path):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    process = _FakeProcess(running_states=(True,))
+    snapshot = _snapshot(
+        41001,
+        process,
+        [os.fspath(old_executable), "web", "start"],
+        os.fspath(old_executable),
+        create_time=123.5,
+    )
+    messages = []
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    web.PROCESS_IDENTITY_FILE.write_text("{malformed")
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41001})
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
+    monkeypatch.setattr(web, "print_safe", messages.append)
+
+    web._stop_known_web_servers(8096)
+
+    assert process.terminate_calls == 0
+    assert process.kill_calls == 0
+    assert web.PID_FILE.read_text() == "41001"
+    assert web.PROCESS_IDENTITY_FILE.read_text() == "{malformed"
+    assert any("identity state is invalid" in message for message in messages)
+
+
+def test_listener_only_same_name_process_is_not_a_managed_daemon(monkeypatch, tmp_path):
+    foreign_executable = tmp_path / "bluearch-aws-tags"
+    foreign_executable.write_text("#!/bin/sh\n")
+    foreign_executable.chmod(0o755)
+    current_executable = (
+        tmp_path
+        / "homebrew"
+        / "Cellar"
+        / "bluearch-aws-tags"
+        / "0.12.6"
+        / "bin"
+        / "bluearch-aws-tags"
+    )
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    process = _FakeProcess(running_states=(True,))
+    snapshot = _snapshot(
+        41001,
+        process,
+        [os.fspath(foreign_executable), "web", "start"],
+        os.fspath(foreign_executable),
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    monkeypatch.setattr(web, "_read_pid_path", lambda _path: None)
+    monkeypatch.setattr(web, "_listener_pids", lambda _port: {41001})
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: True)
+    monkeypatch.setattr(web, "_remove_stale_pid_files", lambda: None)
+
+    web._stop_known_web_servers(8096)
+
+    assert process.terminate_calls == 0
+    assert process.kill_calls == 0
+
+
+def test_stop_revalidates_process_identity_before_signaling(monkeypatch, tmp_path):
+    """The PID-file process cannot change identity between status and stop."""
+    executable = tmp_path / "bluearch-aws-tags"
+    executable.write_text("#!/bin/sh\n")
+    executable.chmod(0o755)
+    original_process = _FakeProcess(running_states=(True, False))
+    reused_process = _FakeProcess()
+    original_snapshot = _snapshot(
+        41001,
+        original_process,
+        [os.fspath(executable), "web", "start"],
+        os.fspath(executable),
+        create_time=1.0,
+    )
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    web._write_process_identity(original_snapshot)
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: original_snapshot)
 
     with pytest.raises(typer.Exit) as exc_info:
         web.stop()
@@ -357,6 +1366,8 @@ def test_stop_revalidates_process_identity_before_signaling(monkeypatch):
     assert exc_info.value.exit_code == 1
     assert original_process.terminate_calls == 0
     assert reused_process.terminate_calls == 0
+    assert web.PID_FILE.read_text() == "41001"
+    assert web.PROCESS_IDENTITY_FILE.exists()
 
 
 def test_capture_process_snapshot_keeps_pid_create_time_argv_and_executable(monkeypatch):
@@ -386,13 +1397,14 @@ def test_capture_process_snapshot_keeps_pid_create_time_argv_and_executable(monk
 
 
 def test_terminate_uses_retained_process_and_skips_kill_after_pid_reuse(monkeypatch):
-    process = _FakeProcess(running_states=([True] * 51) + [False])
+    process = _FakeProcess(running_states=([True] * 53) + [False])
     snapshot = _snapshot(
         41001,
         process,
         ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
         "/usr/bin/python3",
     )
+    monkeypatch.setattr(web, "_capture_process_snapshot", lambda _pid: snapshot)
     monkeypatch.setattr(web.time, "sleep", lambda _seconds: None)
     monkeypatch.setattr(
         web.os,
@@ -405,7 +1417,7 @@ def test_terminate_uses_retained_process_and_skips_kill_after_pid_reuse(monkeypa
     assert process.kill_calls == 0
 
 
-def test_daemon_ready_timeout_uses_spawned_process_identity(monkeypatch, tmp_path):
+def test_daemon_ready_timeout_is_reported_for_caller_cleanup(monkeypatch, tmp_path):
     process = SimpleNamespace(pid=41001, poll=lambda: None)
     expected_snapshot = _snapshot(
         41001,
@@ -413,15 +1425,9 @@ def test_daemon_ready_timeout_uses_spawned_process_identity(monkeypatch, tmp_pat
         ["/usr/bin/python3", "-m", "tag_manager_cli.main", "web", "start"],
         "/usr/bin/python3",
     )
-    termination = []
     times = iter((0.0, 1.0))
     monkeypatch.setattr(web, "_web_ready_timeout_seconds", lambda: 0.0)
     monkeypatch.setattr(web.time, "monotonic", lambda: next(times))
-    monkeypatch.setattr(
-        web,
-        "_terminate_process",
-        lambda pid, **kwargs: termination.append((pid, kwargs)) or True,
-    )
 
     with pytest.raises(typer.Exit):
         web._wait_for_daemon_ready(
@@ -432,9 +1438,6 @@ def test_daemon_ready_timeout_uses_spawned_process_identity(monkeypatch, tmp_pat
             expected_snapshot=expected_snapshot,
         )
 
-    assert termination == [
-        (41001, {"expected_snapshot": expected_snapshot}),
-    ]
 
 
 def test_fixed_sso_port_does_not_fallback(monkeypatch):

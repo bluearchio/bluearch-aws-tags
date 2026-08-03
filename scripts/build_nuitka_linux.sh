@@ -7,7 +7,7 @@ PACKAGE_NAME="${PACKAGE_NAME:-tag_manager_cli}"
 ENTRY_IMPORT="${ENTRY_IMPORT:-tag_manager_cli.entrypoint}"
 APP_OBJECT="${APP_OBJECT:-cli}"
 if [ -z "${ONEFILE_TEMPDIR:-}" ]; then
-  ONEFILE_TEMPDIR="{HOME}/.bluearch-aws-tags/bin"
+  ONEFILE_TEMPDIR="{TEMP}/bluearch-aws-tags_{PID}_{TIME}"
 fi
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

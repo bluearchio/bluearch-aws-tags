@@ -25,7 +25,7 @@ def test_update_help_uses_public_product_command():
     )
 
     assert result.returncode == 0
-    assert result.stdout.rstrip().endswith("0.2.6")
+    assert result.stdout.rstrip().endswith("0.2.9")
 
 
 def _installer(path: Path, marker: Path) -> Path:
@@ -33,6 +33,36 @@ def _installer(path: Path, marker: Path) -> Path:
     path.write_text(f"#!/bin/sh\ntouch {marker}\n")
     path.chmod(0o755)
     return path
+
+
+def _homebrew_core_layout(tmp_path: Path, version: str = "0.2.9"):
+    cellar = tmp_path / "homebrew" / "Cellar"
+    prefix = cellar / "bluearch-aws-core" / version
+    core = prefix / "bin" / "bluearch-aws-core"
+    core.parent.mkdir(parents=True)
+    core.write_text(f"#!/bin/sh\necho 'bluearch-aws-core {version}'\n")
+    core.chmod(0o755)
+    return cellar, prefix, core
+
+
+def _homebrew_tags_layout(tmp_path: Path, version: str = "0.12.6"):
+    cellar = tmp_path / "homebrew" / "Cellar"
+    prefix = cellar / "bluearch-aws-tags" / version
+    tags = prefix / "bin" / "bluearch-aws-tags"
+    tags.parent.mkdir(parents=True)
+    tags.write_text(f"#!/bin/sh\necho 'bluearch-aws-tags {version} (production)'\n")
+    tags.chmod(0o755)
+    return cellar, prefix, tags
+
+
+def _tags_core_restart_command(core: Path) -> list[str]:
+    return [
+        os.fspath(core),
+        "start",
+        "--daemon",
+        "--web-apps",
+        "bluearch-aws-tags",
+    ]
 
 
 def _run_core_installer(
@@ -170,16 +200,13 @@ def test_core_installer_rejects_dynamically_escaped_legacy_wrapper(wrapper, tmp_
 
 def test_core_installer_allows_public_homebrew_formula(tmp_path):
     marker = tmp_path / "brew-ran"
-    prefix = tmp_path / "core-prefix"
-    core = prefix / "bin" / "bluearch-aws-core"
-    core.parent.mkdir(parents=True)
-    core.write_text("#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")
-    core.chmod(0o755)
+    cellar, prefix, _core = _homebrew_core_layout(tmp_path, "0.2.6")
     brew = tmp_path / "brew"
     brew.write_text(
         "#!/bin/sh\n"
         f"touch {marker}\n"
         f"if [ \"$1\" = \"--prefix\" ]; then echo {prefix}; fi\n"
+        f"if [ \"$1\" = \"--cellar\" ]; then echo {cellar}; fi\n"
     )
     brew.chmod(0o755)
 
@@ -211,17 +238,14 @@ def test_core_installer_allows_public_development_pipx_form(tmp_path):
 def test_core_installer_executes_canonical_target_after_symlink_swap(tmp_path):
     public_marker = tmp_path / "public-ran"
     legacy_marker = tmp_path / "legacy-ran"
-    prefix = tmp_path / "core-prefix"
-    core = prefix / "bin" / "bluearch-aws-core"
-    core.parent.mkdir(parents=True)
-    core.write_text("#!/bin/sh\necho 'bluearch-aws-core 0.2.6'\n")
-    core.chmod(0o755)
+    cellar, prefix, _core = _homebrew_core_layout(tmp_path, "0.2.6")
     public = tmp_path / "public" / "brew"
     public.parent.mkdir()
     public.write_text(
         "#!/bin/sh\n"
         f"touch {public_marker}\n"
         f"if [ \"$1\" = \"--prefix\" ]; then echo {prefix}; fi\n"
+        f"if [ \"$1\" = \"--cellar\" ]; then echo {cellar}; fi\n"
     )
     public.chmod(0o755)
     legacy = _installer(tmp_path / "legacy" / "sh", legacy_marker)
@@ -332,19 +356,27 @@ def test_homebrew_update_trusts_exact_formulas_before_any_resolution_or_update(
     tmp_path,
 ):
     brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar, prefix, core = _homebrew_core_layout(tmp_path)
+    _tags_cellar, tags_prefix, tags = _homebrew_tags_layout(tmp_path)
     calls = []
+    call_details = []
     monkeypatch.setattr(
         update_commands,
         "resolve_homebrew_executable",
         lambda candidate=None: os.fspath(brew),
     )
 
-    def record(argv, **_kwargs):
+    def record(argv, **kwargs):
         calls.append(argv)
+        call_details.append((argv, kwargs))
         if argv[1:3] == ["list", "--versions"]:
-            stdout = "bluearch-aws-core 0.2.6"
+            stdout = "bluearch-aws-core 0.2.9"
         elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
-            stdout = "/opt/homebrew/opt/bluearch-aws-core\n"
+            stdout = f"{prefix}\n"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-tags"]:
+            stdout = f"{tags_prefix}\n"
+        elif argv[1:] == ["--cellar"]:
+            stdout = f"{cellar}\n"
         else:
             stdout = ""
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
@@ -353,12 +385,12 @@ def test_homebrew_update_trusts_exact_formulas_before_any_resolution_or_update(
     monkeypatch.setattr(
         update_commands,
         "get_public_core_version",
-        lambda candidate: "0.2.6"
-        if candidate == "/opt/homebrew/opt/bluearch-aws-core/bin/bluearch-aws-core"
+        lambda candidate, **_kwargs: "0.2.9"
+        if candidate == os.fspath(core)
         else None,
     )
 
-    assert update_commands.perform_homebrew_update("0.2.6") is True
+    assert update_commands.perform_homebrew_update("0.2.9") is True
     assert calls == [
         [os.fspath(brew), "trust", "--formula", "bluearchio/tap/bluearch-aws-core"],
         [os.fspath(brew), "trust", "--formula", "bluearchio/tap/bluearch-aws-tags"],
@@ -366,8 +398,23 @@ def test_homebrew_update_trusts_exact_formulas_before_any_resolution_or_update(
         [os.fspath(brew), "list", "--versions", "bluearchio/tap/bluearch-aws-core"],
         [os.fspath(brew), "upgrade", "bluearchio/tap/bluearch-aws-core"],
         [os.fspath(brew), "--prefix", "bluearchio/tap/bluearch-aws-core"],
+        [os.fspath(brew), "--cellar"],
         [os.fspath(brew), "upgrade", "bluearchio/tap/bluearch-aws-tags"],
+        [os.fspath(brew), "--prefix", "bluearchio/tap/bluearch-aws-core"],
+        [os.fspath(brew), "--cellar"],
+        [os.fspath(brew), "--prefix", "bluearchio/tap/bluearch-aws-tags"],
+        [os.fspath(brew), "--cellar"],
+        _tags_core_restart_command(core),
     ]
+    restart_kwargs = next(
+        kwargs
+        for argv, kwargs in call_details
+        if argv == _tags_core_restart_command(core)
+    )
+    assert "BLUEARCH_CORE_BINARY" not in restart_kwargs["env"]
+    assert "BLUEARCH_MINIMUM_CORE_VERSION" not in restart_kwargs["env"]
+    assert "TAG_MANAGER_MINIMUM_CORE_VERSION" not in restart_kwargs["env"]
+    assert restart_kwargs["env"]["BLUEARCH_CORE_TAG_MANAGER_CMD"] == os.fspath(tags)
 
 
 def test_homebrew_update_stops_when_metadata_update_fails(monkeypatch, tmp_path):
@@ -398,11 +445,170 @@ def test_homebrew_update_stops_when_metadata_update_fails(monkeypatch, tmp_path)
     ]
 
 
+def test_standalone_homebrew_core_update_restarts_formula_runtime_once(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar, prefix, core = _homebrew_core_layout(tmp_path)
+    _tags_cellar, tags_prefix, tags = _homebrew_tags_layout(tmp_path)
+    calls = []
+    monkeypatch.setattr(
+        update_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: os.fspath(brew),
+    )
+    monkeypatch.setenv("BLUEARCH_CORE_BINARY", "/tmp/untrusted-core")
+
+    def record(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if argv[1:3] == ["list", "--versions"]:
+            stdout = "bluearch-aws-core 0.2.9\n"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
+            stdout = f"{prefix}\n"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-tags"]:
+            stdout = f"{tags_prefix}\n"
+        elif argv[1:] == ["--cellar"]:
+            stdout = f"{cellar}\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+    monkeypatch.setattr(
+        update_commands,
+        "get_public_core_version",
+        lambda _path, **_kwargs: "0.2.9",
+    )
+
+    assert update_commands.perform_homebrew_core_update("0.2.9") is True
+
+    commands = [argv for argv, _kwargs in calls]
+    restart_command = _tags_core_restart_command(core)
+    assert commands.count(restart_command) == 1
+    restart_kwargs = next(
+        kwargs for argv, kwargs in calls if argv == restart_command
+    )
+    assert "BLUEARCH_CORE_BINARY" not in restart_kwargs["env"]
+    assert restart_kwargs["env"]["BLUEARCH_CORE_TAG_MANAGER_CMD"] == os.fspath(tags)
+
+
+def test_homebrew_update_fails_if_formula_core_runtime_cannot_restart(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar, prefix, core = _homebrew_core_layout(tmp_path)
+    _tags_cellar, tags_prefix, _tags = _homebrew_tags_layout(tmp_path)
+    monkeypatch.setattr(
+        update_commands,
+        "resolve_homebrew_executable",
+        lambda candidate=None: os.fspath(brew),
+    )
+    restart_command = _tags_core_restart_command(core)
+
+    def record(argv, **_kwargs):
+        if argv[1:3] == ["list", "--versions"]:
+            stdout = "bluearch-aws-core 0.2.9\n"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
+            stdout = f"{prefix}\n"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-tags"]:
+            stdout = f"{tags_prefix}\n"
+        elif argv[1:] == ["--cellar"]:
+            stdout = f"{cellar}\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(
+            argv,
+            1 if argv == restart_command else 0,
+            stdout=stdout,
+            stderr="runtime conflict" if argv == restart_command else "",
+        )
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+    monkeypatch.setattr(
+        update_commands,
+        "get_public_core_version",
+        lambda _path, **_kwargs: "0.2.9",
+    )
+
+    assert update_commands.perform_homebrew_update("0.2.9") is False
+
+
+def test_formula_core_binary_must_be_inside_exact_cellar_prefix(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar = tmp_path / "homebrew" / "Cellar"
+    cellar.mkdir(parents=True)
+    arbitrary_prefix = tmp_path / "outside" / "bluearch-aws-core" / "0.2.9"
+    arbitrary_core = arbitrary_prefix / "bin" / "bluearch-aws-core"
+    arbitrary_core.parent.mkdir(parents=True)
+    arbitrary_core.write_text("#!/bin/sh\n")
+    arbitrary_core.chmod(0o755)
+
+    def record(argv, **_kwargs):
+        stdout = f"{cellar}\n" if argv[1:] == ["--cellar"] else f"{arbitrary_prefix}\n"
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+
+    assert update_commands._formula_owned_core_binary(os.fspath(brew)) is None
+
+
+def test_formula_tags_binary_must_be_inside_exact_cellar_prefix(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar = tmp_path / "homebrew" / "Cellar"
+    cellar.mkdir(parents=True)
+    arbitrary_prefix = tmp_path / "outside" / "bluearch-aws-tags" / "0.12.6"
+    arbitrary_tags = arbitrary_prefix / "bin" / "bluearch-aws-tags"
+    arbitrary_tags.parent.mkdir(parents=True)
+    arbitrary_tags.write_text("#!/bin/sh\n")
+    arbitrary_tags.chmod(0o755)
+
+    def record(argv, **_kwargs):
+        stdout = f"{cellar}\n" if argv[1:] == ["--cellar"] else f"{arbitrary_prefix}\n"
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+
+    assert update_commands._formula_owned_tags_binary(os.fspath(brew)) is None
+
+
+def test_formula_restart_overrides_stale_tags_path_and_environment(monkeypatch, tmp_path):
+    brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar, core_prefix, core = _homebrew_core_layout(tmp_path)
+    _tags_cellar, tags_prefix, tags = _homebrew_tags_layout(tmp_path)
+    stale_dir = tmp_path / "curl-install"
+    _installer(stale_dir / "bluearch-aws-tags", tmp_path / "stale-ran")
+    monkeypatch.setenv("PATH", f"{stale_dir}:/usr/bin:/bin")
+    monkeypatch.setenv(
+        "BLUEARCH_CORE_TAG_MANAGER_CMD",
+        os.fspath(stale_dir / "bluearch-aws-tags"),
+    )
+    calls = []
+
+    def record(argv, **kwargs):
+        calls.append((argv, kwargs))
+        if argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
+            stdout = f"{core_prefix}\n"
+        elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-tags"]:
+            stdout = f"{tags_prefix}\n"
+        elif argv[1:] == ["--cellar"]:
+            stdout = f"{cellar}\n"
+        else:
+            stdout = ""
+        return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(update_commands.subprocess, "run", record)
+
+    assert update_commands._restart_formula_owned_core_runtime(os.fspath(brew)) is True
+    restart_kwargs = next(
+        kwargs for argv, kwargs in calls if argv == _tags_core_restart_command(core)
+    )
+    assert restart_kwargs["env"]["BLUEARCH_CORE_TAG_MANAGER_CMD"] == os.fspath(tags)
+    assert restart_kwargs["env"]["PATH"].startswith(os.fspath(stale_dir))
+    assert not (tmp_path / "stale-ran").exists()
+
+
 def test_homebrew_update_stops_when_installed_core_is_below_requirement(
     monkeypatch,
     tmp_path,
 ):
     brew = _installer(tmp_path / "brew", tmp_path / "brew-ran")
+    cellar, prefix, _core = _homebrew_core_layout(tmp_path, "0.2.8")
     calls = []
     monkeypatch.setattr(
         update_commands,
@@ -413,17 +619,23 @@ def test_homebrew_update_stops_when_installed_core_is_below_requirement(
     def record(argv, **_kwargs):
         calls.append(argv)
         if argv[1:3] == ["list", "--versions"]:
-            stdout = "bluearch-aws-core 0.2.5"
+            stdout = "bluearch-aws-core 0.2.8"
         elif argv[1:3] == ["--prefix", "bluearchio/tap/bluearch-aws-core"]:
-            stdout = "/opt/homebrew/opt/bluearch-aws-core\n"
+            stdout = f"{prefix}\n"
+        elif argv[1:] == ["--cellar"]:
+            stdout = f"{cellar}\n"
         else:
             stdout = ""
         return subprocess.CompletedProcess(argv, 0, stdout=stdout, stderr="")
 
     monkeypatch.setattr(update_commands.subprocess, "run", record)
-    monkeypatch.setattr(update_commands, "get_public_core_version", lambda _candidate: "0.2.5")
+    monkeypatch.setattr(
+        update_commands,
+        "get_public_core_version",
+        lambda _candidate, **_kwargs: "0.2.8",
+    )
 
-    assert update_commands.perform_homebrew_update("0.2.6") is False
+    assert update_commands.perform_homebrew_update("0.2.9") is False
     assert [os.fspath(brew), "upgrade", "bluearchio/tap/bluearch-aws-tags"] not in calls
 
 
@@ -577,12 +789,18 @@ def test_homebrew_manual_remediation_trusts_each_formula_before_upgrade():
     core_trust = "brew trust --formula bluearchio/tap/bluearch-aws-core"
     tags_trust = "brew trust --formula bluearchio/tap/bluearch-aws-tags"
     upgrade = "brew upgrade bluearchio/tap/bluearch-aws-core bluearchio/tap/bluearch-aws-tags"
+    restart = (
+        "$(brew --prefix bluearchio/tap/bluearch-aws-core)/bin/"
+        "bluearch-aws-core start --daemon --web-apps bluearch-aws-tags"
+    )
 
     assert core_trust in guidance
     assert tags_trust in guidance
     assert upgrade in guidance
+    assert restart in guidance
     assert guidance.index(core_trust) < guidance.index(upgrade)
     assert guidance.index(tags_trust) < guidance.index(upgrade)
+    assert guidance.index(upgrade) < guidance.index(restart)
     assert "brew trust --tap" not in guidance
 
 
