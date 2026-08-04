@@ -564,7 +564,7 @@ def test_committed_versions_are_bare_and_equal() -> None:
     setup_version = re.search(r'^PACKAGE_VERSION = "([^"]+)"$', setup_text, re.MULTILINE).group(1)
     init_version = re.search(r'^__version__ = "([^"]+)"$', init_text, re.MULTILINE).group(1)
 
-    assert setup_version == init_version == "0.12.6"
+    assert setup_version == init_version == "0.12.7"
     assert re.fullmatch(r"\d+\.\d+\.\d+", init_version)
 
 
@@ -589,7 +589,7 @@ def test_module_version_probe_is_exact_and_stateless(
     )
 
     assert result.returncode == 0
-    assert result.stdout == "bluearch-aws-tags 0.12.6 (production)\n"
+    assert result.stdout == "bluearch-aws-tags 0.12.7 (production)\n"
     assert result.stderr == ""
     assert list(home.iterdir()) == []
 
@@ -617,7 +617,7 @@ def test_installed_public_command_version_is_exact_and_stateless(
     )
 
     assert result.returncode == 0
-    assert result.stdout == "bluearch-aws-tags 0.12.6 (production)\n"
+    assert result.stdout == "bluearch-aws-tags 0.12.7 (production)\n"
     assert result.stderr == ""
     assert list(home.iterdir()) == []
 
@@ -685,6 +685,11 @@ def test_macos_release_gates_v0125_nuitka_brownfield_handoff_after_signing() -> 
     assert 'runtime.parent.parent.resolve() == Path(os.environ["EXPECTED_TEMP_ROOT"]).resolve()' in commands
     assert 'env "${runtime_env[@]}" "$candidate_binary" web stop' in commands
     assert 'test ! -e "$identity_file"' in commands
+    assert "Brownfield runtime diagnostics" in commands
+    assert 'ps -p "$pid" -o pid=,ppid=,uid=,state=,comm=' in commands
+    assert "port_8096_listener_pids=" in commands
+    assert "port_28094_listener_pids=" in commands
+    assert "identity_state=present" in commands
 
 
 def test_version_setter_accepts_only_v_prefixed_semver(tmp_path: Path) -> None:
