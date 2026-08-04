@@ -2,7 +2,7 @@
 
 from setuptools import setup, find_packages
 
-PACKAGE_VERSION = "0.12.6"
+PACKAGE_VERSION = "0.12.7"
 
 # Try to read README.md, fallback to a default description
 try:

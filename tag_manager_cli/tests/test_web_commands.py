@@ -531,13 +531,16 @@ def test_identity_record_survives_deleted_cellar_executable(monkeypatch, tmp_pat
     assert process.kill_calls == 0
 
 
-def test_core_managed_start_migrates_numeric_supervisor_to_nuitka_listener(
+def test_core_managed_start_migrates_inspectable_numeric_supervisor_to_nuitka_listener(
     monkeypatch,
     tmp_path,
 ):
     formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
     old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
-    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.7" / "bin" / "bluearch-aws-tags"
+    old_executable.parent.mkdir(parents=True)
+    old_executable.write_text("#!/bin/sh\n")
+    old_executable.chmod(0o755)
     current_executable.parent.mkdir(parents=True)
     current_executable.write_text("#!/bin/sh\n")
     current_executable.chmod(0o755)
@@ -593,10 +596,325 @@ def test_core_managed_start_migrates_numeric_supervisor_to_nuitka_listener(
     assert identity.executable == os.fspath(nuitka_runtime)
 
 
+def test_deleted_cellar_migrates_exact_legacy_listener_without_signaling_supervisor(
+    monkeypatch,
+    tmp_path,
+):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.7" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    assert not old_executable.exists()
+
+    nuitka_runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    nuitka_runtime.parent.mkdir(parents=True)
+    nuitka_runtime.write_text("#!/bin/sh\n")
+    nuitka_runtime.chmod(0o755)
+    argv = _packaged_daemon_argv(old_executable)
+    supervisor_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    supervisor = _snapshot(
+        41001,
+        supervisor_process,
+        argv,
+        "",
+        create_time=123.5,
+        ppid=1,
+    )
+    listener_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    listener = _snapshot(
+        41002,
+        listener_process,
+        argv,
+        os.fspath(nuitka_runtime),
+        create_time=124.0,
+        ppid=41001,
+    )
+
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    snapshots = {41002: listener}
+
+    def capture(pid):
+        if pid == supervisor.pid:
+            assert supervisor.process.exe() == ""
+            return None
+        return snapshots.get(pid)
+
+    monkeypatch.setattr(web, "_capture_process_snapshot", capture)
+    monkeypatch.setattr(
+        web.psutil,
+        "Process",
+        lambda pid: supervisor_process if pid == supervisor.pid else None,
+    )
+    monkeypatch.setattr(web, "_process_exists", lambda pid: pid == supervisor.pid)
+    monkeypatch.setattr(web, "_listener_pids", lambda port: {41002} if port == 8096 else set())
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_probe_tags_health", lambda port: port == 8096)
+
+    managed = web._managed_server_snapshot()
+
+    assert managed is not None
+    assert managed.snapshot is listener
+    assert managed.supervisor is None
+    assert managed.identity is not None
+    assert web.PID_FILE.read_text() == "41002"
+    identity = web._read_process_identity()
+    assert identity is not None
+    assert identity.pid == 41002
+    assert identity.executable == os.fspath(nuitka_runtime)
+
+    assert web._terminate_managed_runtime(managed) == [41002]
+    assert listener_process.terminate_calls == 1
+    assert listener_process.kill_calls == 0
+    assert supervisor_process.terminate_calls == 0
+    assert supervisor_process.kill_calls == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        "wrong-parent",
+        "wrong-uid",
+        "wrong-argv",
+        "listener-argv-mismatch",
+        "wrong-runtime",
+        "wrong-root",
+        "unhealthy",
+        "multiple-listeners",
+        "old-path-present",
+        "supervisor-exe-present",
+        "wrong-legacy-version",
+    ),
+)
+def test_deleted_cellar_legacy_listener_recovery_rejects_ambiguous_or_untrusted_state(
+    monkeypatch,
+    tmp_path,
+    mutation,
+):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.7" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    old_formula_root = (
+        tmp_path / "other-homebrew" / "Cellar" / "bluearch-aws-tags"
+        if mutation == "wrong-root"
+        else formula_root
+    )
+    legacy_version = "0.12.4" if mutation == "wrong-legacy-version" else "0.12.5"
+    old_executable = old_formula_root / legacy_version / "bin" / "bluearch-aws-tags"
+    if mutation == "old-path-present":
+        old_executable.parent.mkdir(parents=True)
+        old_executable.write_text("#!/bin/sh\n")
+        old_executable.chmod(0o755)
+    supervisor_argv = (
+        _packaged_daemon_argv(old_executable, 8095)
+        if mutation == "wrong-argv"
+        else _packaged_daemon_argv(old_executable)
+    )
+    listener_argv = (
+        _packaged_daemon_argv(old_executable, 8095)
+        if mutation == "listener-argv-mismatch"
+        else supervisor_argv
+    )
+    expected_runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    expected_runtime.parent.mkdir(parents=True)
+    expected_runtime.write_text("#!/bin/sh\n")
+    expected_runtime.chmod(0o755)
+    # A non-0.12.5 launcher legitimately extracts into the unique temp spec, so
+    # the version guard must be the only thing that rejects this observation.
+    runtime_tmp = tmp_path / "runtime-tmp"
+    modern_runtime = runtime_tmp / "bluearch-aws-tags_41001_123_456" / "bluearch-aws-tags.bin"
+    modern_runtime.parent.mkdir(parents=True)
+    modern_runtime.write_text("#!/bin/sh\n")
+    modern_runtime.chmod(0o755)
+    if mutation == "wrong-runtime":
+        listener_runtime = tmp_path / "other-runtime" / "bluearch-aws-tags.bin"
+    elif mutation == "wrong-legacy-version":
+        listener_runtime = modern_runtime
+    else:
+        listener_runtime = expected_runtime
+    listener_uid = (os.getuid() + 1) if mutation == "wrong-uid" else os.getuid()
+    listener_ppid = 49999 if mutation == "wrong-parent" else 41001
+
+    supervisor_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    supervisor = _snapshot(
+        41001,
+        supervisor_process,
+        supervisor_argv,
+        os.fspath(old_executable) if mutation == "supervisor-exe-present" else "",
+        create_time=123.5,
+        ppid=1,
+    )
+    listener_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    listener = _snapshot(
+        41002,
+        listener_process,
+        listener_argv,
+        os.fspath(listener_runtime),
+        create_time=124.0,
+        uid=listener_uid,
+        ppid=listener_ppid,
+    )
+    snapshots = {41002: listener}
+    listener_pids = {41002}
+    extra_process = None
+    if mutation == "multiple-listeners":
+        extra_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+        snapshots[41003] = _snapshot(
+            41003,
+            extra_process,
+            supervisor_argv,
+            os.fspath(expected_runtime),
+            create_time=125.0,
+            ppid=41001,
+        )
+        listener_pids.add(41003)
+
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+
+    def capture(pid):
+        if pid == supervisor.pid:
+            return None
+        return snapshots.get(pid)
+
+    monkeypatch.setattr(web, "_capture_process_snapshot", capture)
+    monkeypatch.setattr(
+        web.psutil,
+        "Process",
+        lambda pid: supervisor_process if pid == supervisor.pid else None,
+    )
+    monkeypatch.setattr(web, "_process_exists", lambda pid: pid == supervisor.pid)
+    monkeypatch.setattr(web, "_listener_pids", lambda port: listener_pids if port == 8096 else set())
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_runtime_temp_root", lambda: runtime_tmp.resolve())
+    monkeypatch.setattr(web, "_probe_tags_health", lambda _port: mutation != "unhealthy")
+
+    managed = web._managed_server_snapshot(
+        target_port=8096,
+        listener_pids=listener_pids,
+    )
+
+    assert managed is None
+    assert web.PID_FILE.read_text() == "41001"
+    assert not web.PROCESS_IDENTITY_FILE.exists()
+    assert listener_process.terminate_calls == 0
+    assert listener_process.kill_calls == 0
+    assert supervisor_process.terminate_calls == 0
+    assert supervisor_process.kill_calls == 0
+    if extra_process is not None:
+        assert extra_process.terminate_calls == 0
+        assert extra_process.kill_calls == 0
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ("create-time", "cmdline", "uid", "exe-nonempty"),
+)
+def test_deleted_cellar_recovery_rejects_supervisor_change_before_persist(
+    monkeypatch,
+    tmp_path,
+    mutation,
+):
+    formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
+    old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.7" / "bin" / "bluearch-aws-tags"
+    current_executable.parent.mkdir(parents=True)
+    current_executable.write_text("#!/bin/sh\n")
+    current_executable.chmod(0o755)
+    assert not old_executable.exists()
+
+    runtime = tmp_path / ".bluearch-aws-tags" / "bin" / "bluearch-aws-tags.bin"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text("#!/bin/sh\n")
+    runtime.chmod(0o755)
+    argv = _packaged_daemon_argv(old_executable)
+    supervisor_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    supervisor = _snapshot(
+        41001,
+        supervisor_process,
+        argv,
+        "",
+        create_time=123.5,
+        ppid=1,
+    )
+    listener_process = _FakeProcess(running_states=(True,), stop_on_terminate=True)
+    listener = _snapshot(
+        41002,
+        listener_process,
+        argv,
+        os.fspath(runtime),
+        create_time=124.0,
+        ppid=41001,
+    )
+
+    if mutation == "create-time":
+        values = iter((123.5, 223.5))
+        supervisor_process.create_time = lambda: next(values)
+    elif mutation == "cmdline":
+        values = iter((list(argv), list(_packaged_daemon_argv(old_executable, 8095))))
+        supervisor_process.cmdline = lambda: next(values)
+    elif mutation == "uid":
+        values = iter(
+            (
+                SimpleNamespace(real=os.getuid()),
+                SimpleNamespace(real=os.getuid() + 1),
+            )
+        )
+        supervisor_process.uids = lambda: next(values)
+    else:
+        values = iter(("", os.fspath(old_executable)))
+        supervisor_process.exe = lambda: next(values)
+
+    monkeypatch.setattr(web, "TAG_MANAGER_DIR", tmp_path)
+    monkeypatch.setattr(web, "PID_FILE", tmp_path / "server.pid")
+    monkeypatch.setattr(web, "PROCESS_IDENTITY_FILE", tmp_path / "server.identity.json")
+    web._atomic_write(web.PID_FILE, "41001")
+    monkeypatch.setattr(
+        web,
+        "_capture_process_snapshot",
+        lambda pid: listener if pid == listener.pid else None,
+    )
+    monkeypatch.setattr(
+        web.psutil,
+        "Process",
+        lambda pid: supervisor_process if pid == supervisor.pid else None,
+    )
+    monkeypatch.setattr(web, "_process_exists", lambda pid: pid == supervisor.pid)
+    monkeypatch.setattr(web, "_current_public_tags_target", lambda: os.fspath(current_executable))
+    monkeypatch.setattr(web, "_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr(web, "_probe_tags_health", lambda port: port == 8096)
+
+    managed = web._managed_server_snapshot(
+        target_port=8096,
+        listener_pids={41002},
+    )
+
+    assert managed is None
+    assert web.PID_FILE.read_text() == "41001"
+    assert not web.PROCESS_IDENTITY_FILE.exists()
+    assert listener_process.terminate_calls == 0
+    assert listener_process.kill_calls == 0
+    assert supervisor_process.terminate_calls == 0
+    assert supervisor_process.kill_calls == 0
+
+
 def test_migrated_nuitka_runtime_stops_listener_and_supervisor(monkeypatch, tmp_path):
     formula_root = tmp_path / "homebrew" / "Cellar" / "bluearch-aws-tags"
     old_executable = formula_root / "0.12.5" / "bin" / "bluearch-aws-tags"
-    current_executable = formula_root / "0.12.6" / "bin" / "bluearch-aws-tags"
+    current_executable = formula_root / "0.12.7" / "bin" / "bluearch-aws-tags"
+    old_executable.parent.mkdir(parents=True)
+    old_executable.write_text("#!/bin/sh\n")
+    old_executable.chmod(0o755)
     current_executable.parent.mkdir(parents=True)
     current_executable.write_text("#!/bin/sh\n")
     current_executable.chmod(0o755)

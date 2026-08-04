@@ -126,6 +126,18 @@ class _ProcessSnapshot:
 
 
 @dataclass(frozen=True)
+class _UninspectableSupervisorObservation:
+    """Stable fields available after macOS loses a removed executable path."""
+
+    pid: int
+    create_time: float
+    argv: tuple[str, ...]
+    uid: int
+    ppid: int
+    port: int
+
+
+@dataclass(frozen=True)
 class _ProcessIdentityRecord:
     """Versioned process identity persisted before Homebrew can remove a Cellar."""
 
@@ -534,7 +546,25 @@ def _managed_server_snapshot(
         return None
     snapshot = _capture_process_snapshot(numeric_pid)
     if snapshot is None:
-        _remove_pid()
+        if not _process_exists(numeric_pid):
+            _remove_pid()
+            return None
+        observation = _capture_uninspectable_legacy_nuitka_supervisor(
+            numeric_pid,
+            target_port=target_port,
+        )
+        if observation is not None:
+            migrated = _migrate_uninspectable_legacy_nuitka_supervisor(
+                observation,
+                target_port=target_port,
+                listener_pids=listener_pids,
+            )
+            if migrated is not None:
+                return migrated
+        print_safe(
+            "[red]The numeric Tags web PID is still live but could not be fully "
+            "inspected; no process signal was sent and the state was preserved.[/red]"
+        )
         return None
 
     if target_port is None:
@@ -671,6 +701,81 @@ def _migrate_numeric_pid_snapshot(
     )
 
 
+def _migrate_uninspectable_legacy_nuitka_supervisor(
+    observation: _UninspectableSupervisorObservation,
+    *,
+    target_port: int | None = None,
+    listener_pids: set[int] | None = None,
+) -> _ManagedRuntime | None:
+    """Adopt one exact 0.12.5 listener when its removed supervisor has no exe path.
+
+    macOS returns an empty ``Process.exe()`` for the still-live Nuitka supervisor
+    after Homebrew removes its Cellar. The listener remains fully inspectable in
+    the fixed 0.12.5 extraction directory, so only that listener is persisted and
+    later signaled. The uninspectable supervisor is never returned for signaling.
+    """
+    numeric_pid = observation.pid
+    if _read_pid_path(PID_FILE) != numeric_pid:
+        return None
+
+    current_formula_root = _homebrew_formula_root(_current_public_tags_target())
+    if (
+        current_formula_root is None
+        or _homebrew_formula_root(observation.argv[0]) != current_formula_root
+        or (target_port is not None and observation.port != target_port)
+    ):
+        return None
+
+    candidates = (
+        listener_pids
+        if target_port == observation.port and listener_pids is not None
+        else _listener_pids(observation.port)
+    )
+    matches: list[_ProcessSnapshot] = []
+    for listener_pid in sorted(candidates):
+        if listener_pid in {numeric_pid, os.getpid()}:
+            continue
+        listener = _capture_process_snapshot(listener_pid)
+        if (
+            listener is None
+            or listener.ppid != numeric_pid
+            or listener.argv != observation.argv
+            or listener.uid != observation.uid
+            or not _snapshot_owned_by_current_user(listener)
+            or not _snapshot_is_current(listener)
+            or not _is_nuitka_listener_snapshot(
+                listener,
+                require_current_launcher=False,
+                target_port=observation.port,
+                expected_supervisor_pid=numeric_pid,
+            )
+        ):
+            continue
+        matches.append(listener)
+
+    if len(matches) != 1:
+        return None
+    selected_listener = matches[0]
+    if (
+        _read_pid_path(PID_FILE) != numeric_pid
+        or selected_listener.ppid != numeric_pid
+        or selected_listener.argv != observation.argv
+        or selected_listener.uid != observation.uid
+        or not _probe_tags_health(observation.port)
+        or not _recaptured_snapshot_matches(selected_listener)
+        or not _recaptured_uninspectable_supervisor_matches(observation)
+    ):
+        return None
+
+    identity = _write_process_identity(selected_listener)
+    _atomic_write(PID_FILE, str(selected_listener.pid))
+    return _ManagedRuntime(
+        snapshot=selected_listener,
+        identity=identity,
+        supervisor=None,
+    )
+
+
 def _is_strict_listener_snapshot(
     snapshot: _ProcessSnapshot,
     *,
@@ -768,12 +873,7 @@ def _is_expected_nuitka_runtime_executable(
         return False
 
     launcher_version = _homebrew_formula_version(snapshot.argv[0]) if snapshot.argv else None
-    legacy_executable = (
-        _runtime_home()
-        / ".bluearch-aws-tags"
-        / "bin"
-        / f"{PUBLIC_TAGS_EXECUTABLE}.bin"
-    )
+    legacy_executable = _legacy_nuitka_runtime_executable()
     if launcher_version == LEGACY_FIXED_NUITKA_VERSION:
         return executable == legacy_executable
 
@@ -800,6 +900,15 @@ def _is_expected_nuitka_runtime_executable(
 
 def _runtime_home() -> Path:
     return Path.home()
+
+
+def _legacy_nuitka_runtime_executable() -> Path:
+    return (
+        _runtime_home()
+        / ".bluearch-aws-tags"
+        / "bin"
+        / f"{PUBLIC_TAGS_EXECUTABLE}.bin"
+    )
 
 
 def _runtime_temp_root() -> Path:
@@ -1026,6 +1135,68 @@ def _capture_process_snapshot(pid: int) -> _ProcessSnapshot | None:
         uid=uid,
         ppid=ppid,
     )
+
+
+def _capture_uninspectable_legacy_nuitka_supervisor(
+    pid: int,
+    *,
+    target_port: int | None = None,
+) -> _UninspectableSupervisorObservation | None:
+    """Capture a live 0.12.5 supervisor only when macOS reports an empty exe."""
+    if pid <= 1 or pid == os.getpid() or not hasattr(os, "getuid"):
+        return None
+    try:
+        process = psutil.Process(pid)
+        create_time = process.create_time()
+        argv = tuple(process.cmdline())
+        executable = process.exe()
+        uid_getter = getattr(process, "uids", None)
+        uid = uid_getter().real if callable(uid_getter) else None
+        ppid_getter = getattr(process, "ppid", None)
+        ppid = ppid_getter() if callable(ppid_getter) else None
+        running = process.is_running()
+    except (psutil.NoSuchProcess, psutil.ZombieProcess, psutil.AccessDenied, OSError):
+        return None
+    if (
+        process.pid != pid
+        or not running
+        or executable != ""
+        or not argv
+        or isinstance(create_time, bool)
+        or not isinstance(create_time, (int, float))
+        or not math.isfinite(float(create_time))
+        or float(create_time) <= 0
+        or uid != os.getuid()
+        or isinstance(ppid, bool)
+        or not isinstance(ppid, int)
+        or ppid < 0
+        or not _is_exact_packaged_daemon_argv(argv, target_port=target_port)
+        or _homebrew_formula_version(argv[0]) != LEGACY_FIXED_NUITKA_VERSION
+        or os.path.lexists(argv[0])
+    ):
+        return None
+    port = int(argv[6])
+    if target_port is None and port not in MANAGED_DASHBOARD_PORTS:
+        return None
+    return _UninspectableSupervisorObservation(
+        pid=pid,
+        create_time=float(create_time),
+        argv=argv,
+        uid=uid,
+        ppid=ppid,
+        port=port,
+    )
+
+
+def _recaptured_uninspectable_supervisor_matches(
+    observation: _UninspectableSupervisorObservation,
+) -> bool:
+    """Re-open the partial supervisor identity immediately before persistence."""
+    current = _capture_uninspectable_legacy_nuitka_supervisor(
+        observation.pid,
+        target_port=observation.port,
+    )
+    return current == observation
 
 
 def _snapshot_is_current(snapshot: _ProcessSnapshot) -> bool:
